@@ -1,0 +1,37 @@
+name: Build GBA联机 v0.6.6 unsigned IPA
+on:
+  push:
+    paths: ['seed/**', 'scripts/**', '.github/workflows/build-ios.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache official Godot iOS tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            tools/Godot.app
+            ~/Library/Application Support/Godot/export_templates/4.4.1.stable
+          key: godot-4.4.1-ios-${{ runner.os }}-${{ runner.arch }}-v1
+      - name: Build unsigned arm64 IPA
+        run: bash scripts/build-ios.sh
+      - name: Upload IPA and build proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: GBALink-v0.6.6-iOS-unsigned
+          path: |
+            build/output/GBALink-v0.6.6-iOS-unsigned.ipa
+            build/output/build-receipt.json
+            build/output/SHA256.txt
+          if-no-files-found: error
+      - name: Upload diagnostic logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GBALink-iOS-build-logs
+          path: build/xcodebuild.log
