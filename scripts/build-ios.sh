@@ -3,8 +3,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 mkdir -p build/xcode build/output tools
-curl --fail --retry 3 --connect-timeout 20 --max-time 180 -o build/game.pck http://142.111.17.194:7778/update/ios-v0.6.10.pck
-printf '%s  %s\n' '719f393a346046b494a1c41e51a61f6d051aed8484345b0f6360f3684ae433d5' 'build/game.pck' | shasum -a 256 -c -
+curl --fail --retry 3 --connect-timeout 20 --max-time 180 -o build/game.pck http://142.111.17.194:7778/update/ios-v0.6.11.pck
+printf '%s  %s\n' '9006887d9e2f074f780f3c86e701c86ee7927f92cc106a9ad6512ab5959de3ab' 'build/game.pck' | shasum -a 256 -c -
 ENGINE="$ROOT/tools/Godot.app/Contents/MacOS/Godot"
 if [ ! -x "$ENGINE" ]; then
  curl --fail --location --retry 3 -o tools/godot.zip https://github.com/godotengine/godot-builds/releases/download/4.4.1-stable/Godot_v4.4.1-stable_macos.universal.zip
@@ -42,14 +42,14 @@ import plistlib,hashlib,json,subprocess
 app=next(Path('build/output/Payload').glob('*.app'))
 with (app/'Info.plist').open('rb') as f:d=plistlib.load(f)
 assert d['CFBundleIdentifier']=='com.gbalink.client'
-assert str(d['CFBundleShortVersionString'])=='0.6.10'
-assert str(d['CFBundleVersion'])=='70'
-expected='719f393a346046b494a1c41e51a61f6d051aed8484345b0f6360f3684ae433d5'
+assert str(d['CFBundleShortVersionString'])=='0.6.11'
+assert str(d['CFBundleVersion'])=='71'
+expected='9006887d9e2f074f780f3c86e701c86ee7927f92cc106a9ad6512ab5959de3ab'
 packs=list(app.rglob('*.pck'));assert any(hashlib.sha256(p.read_bytes()).hexdigest()==expected for p in packs)
 assert not (app/'embedded.mobileprovision').exists()
 arch=subprocess.check_output(['lipo','-archs',str(app/d['CFBundleExecutable'])],text=True).strip();assert arch=='arm64',arch
-receipt={'version':'0.6.10','bundle_id':d['CFBundleIdentifier'],'architecture':arch,'ios_resource_sha256':expected,'unsigned':True,'device_tested':False}
+receipt={'version':'0.6.11','bundle_id':d['CFBundleIdentifier'],'architecture':arch,'ios_resource_sha256':expected,'unsigned':True,'device_tested':False}
 Path('build/output/build-receipt.json').write_text(json.dumps(receipt,indent=2))
 PY
-(cd build/output && /usr/bin/zip -q -r GBALink-v0.6.10-iOS-unsigned.ipa Payload)
-shasum -a 256 build/output/GBALink-v0.6.10-iOS-unsigned.ipa > build/output/SHA256.txt
+(cd build/output && /usr/bin/zip -q -r GBALink-v0.6.11-iOS-unsigned.ipa Payload)
+shasum -a 256 build/output/GBALink-v0.6.11-iOS-unsigned.ipa > build/output/SHA256.txt
