@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 mkdir -p build/xcode build/output tools
 curl --fail --retry 3 --connect-timeout 20 --max-time 180 -o build/game.pck http://142.111.17.194:7778/update/ios-v0.6.12.pck
-printf '%s  %s\n' 'f4fb1d991c0c7ae0022f5304932ae123b5f9b9d391b02578faca6001bd34ba94' 'build/game.pck' | shasum -a 256 -c -
+printf '%s  %s\n' '21544d753989618062397dda64d5464cfe5ee9d7591e5557a2aa67533e56f34f' 'build/game.pck' | shasum -a 256 -c -
 ENGINE="$ROOT/tools/Godot.app/Contents/MacOS/Godot"
 if [ ! -x "$ENGINE" ]; then
  curl --fail --location --retry 3 -o tools/godot.zip https://github.com/godotengine/godot-builds/releases/download/4.4.1-stable/Godot_v4.4.1-stable_macos.universal.zip
@@ -44,7 +44,7 @@ with (app/'Info.plist').open('rb') as f:d=plistlib.load(f)
 assert d['CFBundleIdentifier']=='com.gbalink.client'
 assert str(d['CFBundleShortVersionString'])=='0.6.12'
 assert str(d['CFBundleVersion'])=='72'
-expected='f4fb1d991c0c7ae0022f5304932ae123b5f9b9d391b02578faca6001bd34ba94'
+expected='21544d753989618062397dda64d5464cfe5ee9d7591e5557a2aa67533e56f34f'
 packs=list(app.rglob('*.pck'));assert any(hashlib.sha256(p.read_bytes()).hexdigest()==expected for p in packs)
 assert not (app/'embedded.mobileprovision').exists()
 arch=subprocess.check_output(['lipo','-archs',str(app/d['CFBundleExecutable'])],text=True).strip();assert arch=='arm64',arch
