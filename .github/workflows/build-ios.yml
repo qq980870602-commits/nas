@@ -1,4 +1,4 @@
-name: Build GBA联机 v0.6.8 unsigned IPA
+name: Build GBA联机 v0.6.9 unsigned IPA
 on:
   push:
     paths: ['seed/**', 'scripts/**', '.github/workflows/build-ios.yml']
@@ -23,9 +23,9 @@ jobs:
       - name: Upload IPA and build proof
         uses: actions/upload-artifact@v4
         with:
-          name: GBALink-v0.6.8-iOS-unsigned
+          name: GBALink-v0.6.9-iOS-unsigned
           path: |
-            build/output/GBALink-v0.6.8-iOS-unsigned.ipa
+            build/output/GBALink-v0.6.9-iOS-unsigned.ipa
             build/output/build-receipt.json
             build/output/SHA256.txt
           if-no-files-found: error
