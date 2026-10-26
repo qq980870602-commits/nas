@@ -4,18 +4,22 @@ import Home from './Home.jsx';
 import {GlassProvider,GlassSurface} from './Glass.jsx';
 import {dayKey} from './stats.mjs';
 import {createDahuilangClient} from './dahuilang.mjs';
+import {createSuduguClient} from './sudugu.mjs';
+import {isSudugu} from './source-types.mjs';
 
 const sample={
   settings:{prefetch:5,speechRate:1},
   stats:{[dayKey()]:{read:2700,listen:0}},
-  sources:[{bookSourceName:'大灰狼聚合5.9.30(vip完全版) · 示例',bookSourceUrl:'大灰狼融合VIP5.0',jsLib:"var host = ['https://preview.example'];",bookSourceGroup:'我的书源',warnings:[]}],
+  sources:[{bookSourceName:'大灰狼聚合5.9.30(vip完全版) · 示例',bookSourceUrl:'大灰狼融合VIP5.0',jsLib:"var host = ['https://preview.example'];",bookSourceGroup:'我的书源',warnings:[]},{bookSourceName:'速读谷 · 示例',bookSourceUrl:'https://www.sudugu.org',bookSourceGroup:'我的书源',warnings:['旧版本缓存的不兼容提示']}],
   books:[
     {id:'1',title:'浮生六记',author:'沈复',index:1,progress:.6,chapters:[{title:'卷一 · 闺房记乐'},{title:'卷二 · 闲情记趣'},{title:'卷三 · 坎坷记愁'},{title:'卷四 · 浪游记快'}],bookmarks:[0]},
     {id:'2',title:'山海经',author:'佚名',index:0,progress:.8,chapters:[{title:'南山经'},{title:'西山经'},{title:'北山经'}],bookmarks:[]},
     {id:'3',title:'夜航船',author:'张岱',index:0,progress:.3,chapters:[{title:'卷一 · 天文部'},{title:'卷二 · 地理部'}],bookmarks:[]}
   ]
 };
-const discoveryClient=createDahuilangClient({fetcher:async(url)=>{const u=new URL(url);return Response.json(u.pathname==='/discovestyle'?{code:0,data:[{title:'排行榜',url:''},...['推荐榜','新书榜','完本榜'].map(title=>({title,url:'https://preview.example/get_discover?tab=小说&source=番茄&bdtype='+title+'&page={{page}}'}))]}:{code:0,data:u.searchParams.get('page')!=='1'?[]:sample.books.map((b,i)=>({book_id:b.id,book_name:b.title,author:b.author,source:'番茄',tab:'小说',abstract:['在寻常日子里，读到生活的情趣与温柔。','一部充满想象力的古代地理与神话之书。','翻开古人的随身百科，探寻万物的来历。'][i]}))});}});
+const dhlPreviewClient=createDahuilangClient({fetcher:async(url)=>{const u=new URL(url);return Response.json(u.pathname==='/discovestyle'?{code:0,data:[{title:'排行榜',url:''},...['推荐榜','新书榜','完本榜'].map(title=>({title,url:'https://preview.example/get_discover?tab=小说&source=番茄&bdtype='+title+'&page={{page}}'}))]}:{code:0,data:u.searchParams.get('page')!=='1'?[]:sample.books.map((b,i)=>({book_id:b.id,book_name:b.title,author:b.author,source:'番茄',tab:'小说',abstract:['在寻常日子里，读到生活的情趣与温柔。','一部充满想象力的古代地理与神话之书。','翻开古人的随身百科，探寻万物的来历。'][i]}))});}});
+const suduguPreviewClient=createSuduguClient({fetcher:async(url)=>new Response(new URL(url).pathname==='/fenlei/'?'<div class="fenlei"><a href="/xianxia/">仙侠小说</a></div>':sample.books.map(book=>'<div class="item"><h3><a href="/'+book.id+'/">'+book.title+'</a></h3><p>作者：'+book.author+'</p></div>').join(''))});
+const discoveryClient={discoveryCategories:(source,options)=>(isSudugu(source)?suduguPreviewClient:dhlPreviewClient).discoveryCategories(source,options),discover:(source,entry,page)=>(isSudugu(source)?suduguPreviewClient:dhlPreviewClient).discover(source,entry,page)};
 export default function DesignPreview(){
   const [data,setData]=useState(sample),[tab,setTab]=useState('书架'),[book,setBook]=useState(null);
   const [sourceId,setSourceId]=useState(null),[keyword,setKeyword]=useState(''),[sourceText,setSourceText]=useState(''),[sourceUrl,setSourceUrl]=useState(''),[results,setResults]=useState([]);

@@ -3,6 +3,8 @@ import {selectAll} from 'css-select';
 import {textContent, getInnerHTML} from 'domutils';
 import {assertRule, jsonValues, searchAddress} from './rules.mjs';
 import {isDahuilang,dahuilangClient} from './dahuilang.mjs';
+import {isSudugu} from './source-types.mjs';
+import {suduguClient} from './sudugu.mjs';
 
 function context(body) {
   try { return {json: JSON.parse(body)}; } catch { return {html:parseDocument(body)}; }
@@ -48,12 +50,14 @@ function rows(ctx, rule) {
 }
 function absolute(value, base) { if (!value) throw new Error('书源没有解析出链接'); return new URL(value, base).href; }
 export async function search(source, keyword) {
+  if(isSudugu(source))return suduguClient.search(source,keyword);
   if(isDahuilang(source))return dahuilangClient.search(source,keyword);
   const url = searchAddress(source, keyword); const ctx = await load(url, source); const r = source.ruleSearch;
   if (!r?.bookList || !r.name || !r.bookUrl) throw new Error('缺少搜索列表、书名或书籍链接规则');
   return rows(ctx, r.bookList).map(item => ({title:first(item,r.name), author:first(item,r.author), url:absolute(first(item,r.bookUrl),url)}));
 }
 export async function catalog(source, book) {
+  if(isSudugu(source))return suduguClient.catalog(source,book);
   if(isDahuilang(source))return dahuilangClient.catalog(source,book);
   let url = book.url;
   if (source.ruleBookInfo?.tocUrl) url = absolute(first(await load(url,source), source.ruleBookInfo.tocUrl), url);
@@ -65,6 +69,7 @@ export async function catalog(source, book) {
   return chapters;
 }
 export async function chapterText(source, chapter) {
+  if(isSudugu(source))return suduguClient.chapterText(source,chapter);
   if(isDahuilang(source))return dahuilangClient.chapterText(source,chapter);
   const r = source.ruleContent;
   if (!r?.content) throw new Error('缺少正文规则');

@@ -7,5 +7,8 @@ export function discoveryHomeSections(categories) {
   if(!sections.length)for(const entry of categories.slice(0,3)){
     if(!used.has(entry.url)){used.add(entry.url);sections.push({title:entry.title,entry});}
   }
+  if(!sections.some(section=>section.title==='新书榜')){
+    const latest=categories.find(entry=>entry.title==='最新更新'&&!used.has(entry.url));if(latest)sections.push({title:latest.title,entry:latest});
+  }
   return sections;
 }

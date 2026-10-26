@@ -1,3 +1,4 @@
+import {isSudugu} from './source-types.mjs';
 // Deliberately reject unsupported rules instead of silently returning the wrong book.
 export function assertRule(rule = '') {
   if (/@js:|<js>|java\.|\{\{|@XPath:|^\/\/|##|&&|\|\|/.test(rule))
@@ -15,6 +16,7 @@ export function importSources(text) {
   if (!sources.length) throw new Error('书源列表为空');
   return sources.map(s => {
     if (!s || typeof s.bookSourceName !== 'string' || !s.bookSourceName.trim() || typeof s.bookSourceUrl !== 'string' || !s.bookSourceUrl.trim()) throw new Error('书源缺少名称或标识');
+    if(isSudugu(s))return {...s,warnings:[]};
     const warnings = [];
     for (const group of ['ruleSearch', 'ruleBookInfo', 'ruleToc', 'ruleContent'])
       for (const rule of Object.values(s[group] ?? {})) if (typeof rule === 'string') { try { assertRule(rule); } catch (e) { warnings.push(e.message); } }
