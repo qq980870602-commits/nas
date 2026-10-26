@@ -1,7 +1,7 @@
 name: Build Qidu reader unsigned IPA
 on:
   push:
-    branches: ['codex/qidu-ios']
+    branches: ['codex/qidu-ios*']
     paths: ['qidu-reader/**', '.github/workflows/build-qidu-ios.yml']
   workflow_dispatch:
 permissions:
