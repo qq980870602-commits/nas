@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "栖读",
+    "slug": "qidu-reader",
+    "version": "0.6.0",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.qidu.reader"
+    },
+    "android": {
+      "package": "com.qidu.reader"
+    },
+    "plugins": [
+      "expo-document-picker",
+      "expo-font",
+      "expo-secure-store"
+    ],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
