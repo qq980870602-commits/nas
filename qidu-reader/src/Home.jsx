@@ -108,6 +108,7 @@ export default function Home(p) {
     [selectedGroup, setSelectedGroup] = useState('全部');
   const scheme=useColorScheme();const appAppearance={...appearanceDefaults,...data.settings,...(scheme==='dark'&&data.settings.appFollowSystem?{appBackground:data.settings.appDarkBackground,uiInk:data.settings.appDarkInk}:{})};
   const source = data.sources.find(x => x.bookSourceUrl === sourceId);
+  const openSearch=()=>{const target=source||data.sources[0];if(!target){setTab('书源');setSheet('导入');return;}setSourceId(target.bookSourceUrl);setResults([]);setSheet('详情');};
   const groups = ['全部', ...new Set(data.sources.map(x => x.bookSourceGroup || '未分组'))];
   const cacheCount = data.books.filter(b => b.source).reduce((n, b) => n + b.chapters.filter(c => c.content).length, 0);
   const bookmarkCount = data.books.reduce((n, b) => n + (b.bookmarks?.length || 0), 0);
@@ -125,7 +126,7 @@ export default function Home(p) {
     }}><ScrollView contentContainerStyle={u.page}><View style={u.header}><Text style={[u.title,{color:appAppearance.uiInk||appAppearance.accent},appAppearance.uiFont&&{fontFamily:p.fontReady||undefined}]}>{tab==='书架'?(appAppearance.shelfTop==='分组与搜索'?'全部':'书架'):tab}</Text><View style={{
             flexDirection: 'row',
             gap: 10
-          }}>{tab === '书架' && <Action disabled={busy} onPress={importBook}>＋ 导入</Action>}{tab === '书源' && <Action onPress={() => setSheet('导入')}>＋</Action>}{tab === '设置' && <Text style={u.version}>众阅 0.10</Text>}</View></View>{busy && <GlassSurface style={u.notice}><Text style={{
+          }}>{['书架','发现','书源'].includes(tab)&&<Action onPress={openSearch}>搜书</Action>}{tab === '书架' && <Action disabled={busy} onPress={importBook}>＋ 导入</Action>}{tab === '书源' && <Action onPress={() => setSheet('导入')}>＋</Action>}{tab === '设置' && <Text style={u.version}>众阅 0.10.2</Text>}</View></View>{busy && <GlassSurface style={u.notice}><Text style={{
             color: green
           }}>正在处理，请稍候…</Text></GlassSurface>}
   {tab === '书架' && <>{appAppearance.shelfTop!=='简洁'&&<GlassInput value={query} onChangeText={setQuery} placeholder="⌕ 搜索书名或作者" placeholderTextColor="#697E81" style={u.search} />}{data.books.length === 0 && <GlassSurface contentCard style={u.statsCard}><Text style={u.cardHeading}>你的随身书房</Text><Text style={u.secondary}>导入一本书，或选择书源搜索。{'\n'}背景与字体，都可以换成喜欢的样子。</Text><View style={u.chips}><Action onPress={importBook}>导入 TXT</Action><Action onPress={() => setTab('书源')}>选择书源</Action></View></GlassSurface>}<View style={appAppearance.shelfLayout==='网格'?{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between'}:undefined}>{data.books.filter(b => (b.title + (b.author || '')).toLowerCase().includes(query.toLowerCase())).map((b, i) => {
@@ -144,7 +145,7 @@ export default function Home(p) {
                   borderRadius: 8
                 }} /></View></GlassSurface>;
           })}</View></>}
-  {tab === '书源' && <><GlassInput value={siteQuery} onChangeText={setSiteQuery} placeholder="⌕ 搜索站点或配置" placeholderTextColor="#697E81" style={u.search} /><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={u.chips}>{groups.map(g => <Action key={g} onPress={() => setSelectedGroup(g)}>{selectedGroup === g ? '● ' : ''}{g}</Action>)}</ScrollView><Text style={[u.secondary,{marginBottom:12}]}>点书源看推荐，长按搜索与管理</Text><View style={u.grid}>{data.sources.filter(x => (selectedGroup === '全部' || (x.bookSourceGroup || '未分组') === selectedGroup) && (x.bookSourceName + (x.bookSourceGroup || '')).toLowerCase().includes(siteQuery.toLowerCase())).map((x, i) => <GlassSurface key={x.bookSourceUrl} style={u.sourceTile} onPress={() => {
+  {tab === '书源' && <><GlassInput value={siteQuery} onChangeText={setSiteQuery} placeholder="⌕ 搜索站点或配置" placeholderTextColor="#697E81" style={u.search} /><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={u.chips}>{groups.map(g => <Action key={g} onPress={() => setSelectedGroup(g)}>{selectedGroup === g ? '● ' : ''}{g}</Action>)}</ScrollView><Text style={[u.secondary,{marginBottom:12}]}>点书源看推荐，点击右上角“搜书”搜索小说</Text><View style={u.grid}>{data.sources.filter(x => (selectedGroup === '全部' || (x.bookSourceGroup || '未分组') === selectedGroup) && (x.bookSourceName + (x.bookSourceGroup || '')).toLowerCase().includes(siteQuery.toLowerCase())).map((x, i) => <GlassSurface key={x.bookSourceUrl} style={u.sourceTile} onPress={() => {
               setSourceId(x.bookSourceUrl);
               setResults([]);
               if (isDahuilang(x)||isSudugu(x)) setTab('发现'); else setSheet('详情');
@@ -176,10 +177,10 @@ export default function Home(p) {
               }} /><Action disabled={busy} onPress={importFile}>从 JSON 文件导入</Action><GlassInput style={[u.input, {
                 minHeight: 110
               }]} value={sourceText} onChangeText={setSourceText} placeholder="或粘贴书源 JSON" placeholderTextColor="#697E81" multiline /><Action disabled={busy || !sourceText.trim()} onPress={importText}>导入粘贴内容</Action></>}
-  {sheet === '详情' && source && <><Text selectable style={u.secondary}>{source.bookSourceUrl}</Text><Text style={[u.secondary, {
+  {sheet === '详情' && source && <><Text style={u.cardHeading}>选择书源搜索</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={u.chips}>{data.sources.map(item=><Action key={item.bookSourceUrl} onPress={()=>{setSourceId(item.bookSourceUrl);setResults([]);}}>{item.bookSourceUrl===sourceId?'● ':''}{item.bookSourceName}</Action>)}</ScrollView><GlassInput style={u.input} value={keyword} onChangeText={setKeyword} placeholder={isSudugu(source)?'书名、作者或速读谷书籍链接':'搜索书名或作者'} placeholderTextColor="#697E81" /><Action disabled={busy || !keyword.trim()} onPress={doSearch}>{busy ? '正在搜索…' : '搜索'}</Action><Text selectable style={u.secondary}>{source.bookSourceUrl}</Text><Text style={[u.secondary, {
                 color: '#71634A',
                 marginVertical: 16
-              }]}>{isDahuilang(source) ? '已接入 5.9.30 专用小说适配；可浏览搜索，付费正文需在当前线路登录验证。' : isSudugu(source) ? '已接入速读谷专用解析，支持新版域名、目录分页和正文分页。' : source.warnings?.length ? source.warnings.join('；') : '基础规则可尝试，实际可用性需搜索验证'}</Text>{isDahuilang(source) && p.accountPanel(source)}<GlassInput style={u.input} value={keyword} onChangeText={setKeyword} placeholder={isSudugu(source)?'书名、作者或速读谷书籍链接':'搜索书名或作者'} placeholderTextColor="#697E81" /><Action disabled={busy || !keyword.trim()} onPress={doSearch}>{busy ? '正在搜索…' : '搜索'}</Action>{results.map((item, i) => <GlassSurface key={item.url + i} style={u.statsCard}><Text style={u.cardHeading}>{item.title}</Text><Text style={u.secondary}>{item.author}</Text><Action onPress={()=>{setOnlineDetails({book:item,source});setSheet('作品详情');}}>作品详情</Action><Action disabled={busy} onPress={() => {
+              }]}>{isDahuilang(source) ? '已接入 5.9.30 专用小说适配；可浏览搜索，付费正文需在当前线路登录验证。' : isSudugu(source) ? '已接入速读谷专用解析，支持新版域名、目录分页和正文分页。' : source.warnings?.length ? source.warnings.join('；') : '基础规则可尝试，实际可用性需搜索验证'}</Text>{isDahuilang(source) && p.accountPanel(source)}{results.map((item, i) => <GlassSurface key={item.url + i} style={u.statsCard}><Text style={u.cardHeading}>{item.title}</Text><Text style={u.secondary}>{item.author}</Text><Action onPress={()=>{setOnlineDetails({book:item,source});setSheet('作品详情');}}>作品详情</Action><Action disabled={busy} onPress={() => {
                   close();
                   addOnline(item);
                 }}>加入书架并阅读</Action></GlassSurface>)}<View style={{
