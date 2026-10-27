@@ -10,13 +10,23 @@
       "bundleIdentifier": "com.qidu.reader"
     },
     "android": {
-      "package": "com.qidu.reader"
+      "package": "com.qidu.reader",
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       "expo-document-picker",
       "expo-font",
       "expo-secure-store",
-      "expo-audio"
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundRecording": false
+        }
+      ]
     ],
     "platforms": [
       "ios",
