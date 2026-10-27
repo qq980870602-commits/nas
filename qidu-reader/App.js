@@ -1,16 +1,20 @@
+import {ThemeText as Text} from './src/Glass.jsx';
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, AppState, useColorScheme, ImageBackground, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, AppState, useColorScheme, Image, ImageBackground, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import * as Picker from 'expo-document-picker';
 import * as FS from 'expo-file-system/legacy';
 import * as Font from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import * as Speech from 'expo-speech';
 import * as Sharing from 'expo-sharing';
+import ReaderView from './src/ReaderView.jsx';
+import {createSpeechController} from './src/speech-controller.js';
+import {parseTtsSources} from './src/tts.mjs';
 import Home from './src/Home.jsx';
 import BookDetails from './src/BookDetails.jsx';
 import { metadataPatch } from './src/book-metadata.mjs';
 import { GlassProvider, AppearanceProvider, GlassSurface } from './src/Glass.jsx';
-import {appearanceDefaults,themeFile,parseTheme} from './src/appearance.mjs';
+import {appearanceDefaults,cleanTheme,themeFile,parseTheme} from './src/appearance.mjs';
 import {splitWithRules,validateTocRule} from './src/toc-rules.mjs';
 import {ReaderSettings,Choice} from './src/Customize.jsx';
 import { recordTime } from './src/stats.mjs';
@@ -58,7 +62,8 @@ function ReaderApp() {
     [ready, setReady] = useState(false),
     [tab, setTab] = useState('书架');
   const systemScheme=useColorScheme();
-  const [voices,setVoices]=useState([]);
+  const [voices,setVoices]=useState([]),[startupVisible,setStartupVisible]=useState(false);
+  useEffect(()=>{if(!ready||!data.settings.startupEnabled||!data.settings.startupImage)return;setStartupVisible(true);const timer=setTimeout(()=>setStartupVisible(false),1800);return()=>clearTimeout(timer);},[ready]);
   useEffect(()=>{Speech.getAvailableVoicesAsync().then(items=>setVoices(items.filter(x=>/^zh|^cmn|^yue/i.test(x.language)))).catch(()=>{});},[]);
   const [detailTarget, setDetailTarget] = useState(null);
   const [bookId, setBookId] = useState(null),
@@ -72,6 +77,9 @@ function ReaderApp() {
   const [fontReady, setFontReady] = useState(null),
     [speaking, setSpeaking] = useState(false);
   const speechToken = useRef(0);
+  const speechController=useRef(null);if(!speechController.current)speechController.current=createSpeechController();
+  const [toolbarVisible,setToolbarVisible]=useState(true),[speechParagraph,setSpeechParagraph]=useState(0);
+  const lastParagraph=useRef(0);
   const reader = useRef(null),
     restore = useRef(true),
     lastSave = useRef(0),
@@ -79,7 +87,7 @@ function ReaderApp() {
     saveAllowed = useRef(true);
   const book = data.books.find(b => b.id === bookId),
     settings = data.settings,
-    readerColors=settings.followSystem?(systemScheme==='dark'?{background:settings.darkBackground,ink:settings.darkInk}:{background:settings.lightBackground,ink:settings.lightInk}):settings,
+    readerColors=settings.bindReaderTheme?{background:settings.appBackground,ink:settings.uiInk}:settings.followSystem?(systemScheme==='dark'?{background:settings.darkBackground,ink:settings.darkInk}:{background:settings.lightBackground,ink:settings.lightInk}):settings,
     chapter = book?.chapters[book.index];
   const source = data.sources.find(x => x.bookSourceUrl === sourceId);
   const updateSettings = value => setData(d => ({
@@ -119,7 +127,7 @@ function ReaderApp() {
             ...parsed,
             settings: {
               ...initial.settings,
-              ...parsed.settings,
+              ...parsed.settings,...cleanTheme(parsed.settings||{}),
               fonts:parsed.settings?.fonts|| (parsed.settings?.font?[parsed.settings.font]:[])
             }
           });
@@ -163,15 +171,15 @@ function ReaderApp() {
     };
   }, [settings.font]);
   useEffect(() => {
-    restore.current = true;
+    restore.current = true;lastParagraph.current=0;
   }, [bookId, book?.index]);
   useEffect(() => {
     speechToken.current++;
-    Speech.stop();
+    speechController.current.stop();
     setSpeaking(false);
     return () => {
       speechToken.current++;
-      Speech.stop();
+      speechController.current.stop();
     };
   }, [bookId, book?.index]);
   useEffect(() => {
@@ -193,7 +201,7 @@ function ReaderApp() {
       active = state === 'active';
       if (!active && speaking) {
         speechToken.current++;
-        Speech.stop();
+        speechController.current.stop();
         setSpeaking(false);
       }
     });
@@ -204,38 +212,11 @@ function ReaderApp() {
     };
   }, [ready, bookId, panel, detailTarget, speaking]);
   const toggleSpeech = () => {
-    if (speaking) {
-      speechToken.current++;
-      Speech.stop();
-      setSpeaking(false);
-      return;
-    }
-    if (!chapter?.content) {
-      Alert.alert('没有正文', '请先加载当前章节');
-      return;
-    }
-    const token = ++speechToken.current,
-      chunks = chapter.content.match(/[\s\S]{1,1000}/g) || [];
+    if(speaking){speechController.current.stop();setSpeaking(false);reader.current?.clearHighlight();return;}
+    if(!chapter?.content){Alert.alert('没有正文','请先加载当前章节');return;}
     setSpeaking(true);
-    const speakChunk = index => {
-      if (token !== speechToken.current) return;
-      if (index >= chunks.length) {
-        setSpeaking(false);
-        return;
-      }
-      Speech.speak(chunks[index], {
-        language: 'zh-CN',
-        rate: settings.speechRate || 1,
-        pitch: settings.speechPitch||1,
-        voice: settings.voice||undefined,
-        onDone: () => speakChunk(index + 1),
-        onError: e => {
-          setSpeaking(false);
-          Alert.alert('朗读失败', e.message || '请检查系统语音设置');
-        }
-      });
-    };
-    speakChunk(0);
+    const source=(settings.ttsSources||[]).find(x=>x.id===settings.ttsSourceId);
+    speechController.current.start({content:chapter.content,settings,source,startParagraph:lastParagraph.current,onParagraph:index=>{setSpeechParagraph(index);reader.current?.highlight(index);},onRange:(index,offset,length)=>reader.current?.highlight(index,offset,length),onDone:()=>{setSpeaking(false);reader.current?.clearHighlight();},onError:e=>{setSpeaking(false);reader.current?.clearHighlight();Alert.alert('朗读失败',e.message);}});
   };
   const toggleBookmark = () => {
     const marks = book.bookmarks || [];
@@ -256,7 +237,7 @@ function ReaderApp() {
           font: null,
           fonts: [],
           image: null,
-          appImage: null
+          appImage: null,startupImage:null,startupEnabled:false,cardImageLight:null,cardImageDark:null,ttsSources:[],ttsSourceId:null
         }
       }
     }));
@@ -284,11 +265,11 @@ function ReaderApp() {
       sources,
       settings: {
         ...initial.settings,
-        ...saved.settings,
+        ...saved.settings,...cleanTheme(saved.settings||{}),
         font: null,
         fonts: [],
         image: null,
-        appImage: null
+        appImage: null,startupImage:null,startupEnabled:false,cardImageLight:null,cardImageDark:null,ttsSources:[],ttsSourceId:null
       }
     };
     if (!Number.isFinite(candidate.settings.size) || candidate.settings.size < 14 || candidate.settings.size > 36 || !Number.isFinite(candidate.settings.spacing) || candidate.settings.spacing < 1.2 || candidate.settings.spacing > 2.6) throw new Error('备份排版设置不合法');
@@ -371,11 +352,7 @@ function ReaderApp() {
         from: asset.uri,
         to: uri
       });
-      updateSettings(kind === 'font' ? (()=>{const font={name:'UserFont'+Date.now(),label:asset.name,uri};return {font,fonts:[...(settings.fonts||[]),font]};})() : kind === 'appImage' ? {
-        appImage: uri
-      } : {
-        image: uri
-      });
+      updateSettings(kind === 'font' ? (()=>{const font={name:'UserFont'+Date.now(),label:asset.name,uri};return {font,fonts:[...(settings.fonts||[]),font]};})() : {[kind]:uri});
     }
   };
   const addSources = text => {
@@ -392,6 +369,7 @@ function ReaderApp() {
     Alert.alert('书源已导入', `${imported.length} 个书源。请查看兼容提示后搜索。`);
   };
   const openBook = b => {
+    setToolbarVisible(settings.readerStyle!=='极简');lastParagraph.current=0;
     updateBook(b.id, {
       lastRead: Date.now()
     });
@@ -450,13 +428,24 @@ function ReaderApp() {
     }));
     if (readNow) setBookId(b.id);else Alert.alert('已加入书架', b.title);
   });
-  const exportTheme=()=>run(async()=>{if(!(await Sharing.isAvailableAsync()))throw Error('此设备不支持分享');const uri=FS.cacheDirectory+'qidu-theme-'+Date.now()+'.json';await FS.writeAsStringAsync(uri,JSON.stringify(themeFile(settings),null,2));await Sharing.shareAsync(uri,{mimeType:'application/json',UTI:'public.json'});});
-  const importTheme=()=>run(async()=>{const result=await Picker.getDocumentAsync({type:'*/*',copyToCacheDirectory:true});if(result.canceled)return;const asset=result.assets[0];if(asset.size>256*1024)throw Error('主题文件不能超过 256KB');updateSettings(parseTheme(await FS.readAsStringAsync(asset.uri)));Alert.alert('主题已导入');});
+  const importTts=text=>run(async()=>{const imported=parseTtsSources(text);updateSettings({ttsSources:[...(settings.ttsSources||[]).filter(x=>!imported.some(y=>y.id===x.id)),...imported]});Alert.alert('已导入朗读源',imported.length+' 个');});
+  const importTtsFile=()=>run(async()=>{const result=await Picker.getDocumentAsync({type:'*/*',copyToCacheDirectory:true});if(result.canceled)return;if(result.assets[0].size>256*1024)throw Error('朗读源配置超过 256KB');const imported=parseTtsSources(await FS.readAsStringAsync(result.assets[0].uri));updateSettings({ttsSources:[...(settings.ttsSources||[]),...imported]});});
+  const exportTheme=()=>run(async()=>{
+    if(!(await Sharing.isAvailableAsync()))throw Error('此设备不支持分享');const bundle={...themeFile(settings),version:2,assets:[]};let total=0;
+    for(const key of ['appImage','image','startupImage','cardImageLight','cardImageDark','font']){const value=settings[key],uri=key==='font'?value?.uri:value;if(!uri)continue;const info=await FS.getInfoAsync(uri);if(!info.exists)continue;if(info.size>8*1024*1024)throw Error('单个主题素材超过 8MB，请先更换较小文件');total+=info.size;if(total>24*1024*1024)throw Error('主题素材总量超过 24MB');bundle.assets.push({key,ext:uri.split('.').pop().toLowerCase(),label:key==='font'?value.label:undefined,data:await FS.readAsStringAsync(uri,{encoding:FS.EncodingType.Base64})});}
+    const uri=FS.cacheDirectory+'qidu-theme-'+Date.now()+'.json';await FS.writeAsStringAsync(uri,JSON.stringify(bundle));await Sharing.shareAsync(uri,{mimeType:'application/json',UTI:'public.json'});
+  });
+  const importTheme=()=>run(async()=>{
+    const result=await Picker.getDocumentAsync({type:'*/*',copyToCacheDirectory:true});if(result.canceled)return;const asset=result.assets[0];if(asset.size>34*1024*1024)throw Error('主题文件不能超过 34MB');const text=await FS.readAsStringAsync(asset.uri),incoming=JSON.parse(text),config=parseTheme(text);if(incoming.assets&&!Array.isArray(incoming.assets))throw Error('主题素材格式错误');
+    const assets=incoming.assets||[];if(assets.length>6)throw Error('主题素材过多');for(const item of assets){if(!['appImage','image','startupImage','cardImageLight','cardImageDark','font'].includes(item.key)||!(item.key==='font'?['ttf','otf']:['png','jpg','jpeg','webp']).includes(item.ext)||typeof item.data!=='string'||item.data.length>12*1024*1024||!/^[A-Za-z0-9+/]*={0,2}$/.test(item.data))throw Error('主题素材不合法');}
+    for(const item of assets){const uri=FS.documentDirectory+'theme-'+item.key+'-'+Date.now()+'.'+item.ext;await FS.writeAsStringAsync(uri,item.data,{encoding:FS.EncodingType.Base64});if(item.key==='font'){const font={uri,name:'UserFont'+Date.now(),label:typeof item.label==='string'?item.label:'导入主题字体'};config.font=font;config.fonts=[...(settings.fonts||[]),font];}else config[item.key]=uri;}
+    updateSettings(config);Alert.alert('主题已导入');
+  });
   const fontPanel=<View style={{gap:12}}><Text style={s.label}>字体管理 · {(settings.fonts||[]).length} 个自定义字体</Text><Choice items={[[null,'系统字体'],...(settings.fonts||[]).map(f=>[f.name,f.label||f.name])]} value={settings.font?.name||null} onChange={name=>updateSettings({font:(settings.fonts||[]).find(f=>f.name===name)||null})}/><Choice items={[[1,'＋ 导入 TTF / OTF']]} onChange={()=>run(()=>pick('font'))}/>{(settings.fonts||[]).map(f=><View key={f.name} style={{flexDirection:'row',alignItems:'center',gap:10}}><Text style={{flex:1,color:'#45665F'}}>{f.label||f.name}</Text><Button onPress={()=>updateSettings({fonts:(settings.fonts||[]).filter(x=>x.name!==f.name),...(settings.font?.name===f.name?{font:null}:{})})}>移除</Button></View>)}<Text style={{color:'#688077',fontSize:12}}>移除只取消字体列表引用，不影响书架。</Text></View>;
-  const settingView=<ReaderSettings settings={settings} update={updateSettings} pickImage={kind=>run(()=>pick(kind))} fontReady={fontReady} fontPanel={fontPanel} voices={voices} speaking={speaking}/>;
+  const settingView=<ReaderSettings settings={settings} update={updateSettings} pickImage={kind=>run(()=>pick(kind))} fontReady={fontReady} fontPanel={fontPanel} voices={voices} speaking={speaking} onImportTts={importTts} onImportTtsFile={importTtsFile} onExport={exportTheme} onImport={importTheme}/>;
   const detailSheet = <Modal visible={!!detailTarget} transparent presentationStyle="overFullScreen" animationType="slide" onRequestClose={() => setDetailTarget(null)}><SafeAreaView style={[s.root, {
       backgroundColor: '#E5F0EC'
-    }]}><GlassSurface style={s.readerToolbar} prominent><Text style={s.heading}>作品详情</Text><Button onPress={() => setDetailTarget(null)}>完成</Button></GlassSurface><ScrollView contentContainerStyle={{
+    }]}><GlassSurface contentCard={settings.flipFollowAppearance} style={s.readerToolbar} prominent><Text style={s.heading}>作品详情</Text><Button onPress={() => setDetailTarget(null)}>完成</Button></GlassSurface><ScrollView contentContainerStyle={{
         padding: 20
       }}>{detailTarget && <BookDetails book={detailTarget} source={detailTarget.source} busy={busy} onFetched={info => updateBook(detailTarget.id, metadataPatch(info))} onRead={info => {
           setDetailTarget(null);
@@ -466,44 +455,10 @@ function ReaderApp() {
           });
         }} />}</ScrollView></SafeAreaView></Modal>;
   if (!ready) return <><SafeAreaView style={s.root}><Text style={s.subtitle}>正在打开书架…</Text></SafeAreaView>{detailSheet}</>;
+  if(startupVisible)return <TouchableOpacity activeOpacity={1} style={{flex:1,backgroundColor:settings.appBackground}} onPress={()=>setStartupVisible(false)}><Image source={{uri:settings.startupImage}} style={{width:'100%',height:'100%'}} resizeMode='cover'/></TouchableOpacity>;
   if (book) return <AppearanceProvider settings={{...settings,uiFontFamily:fontReady}}><SafeAreaView style={[s.root, {
       backgroundColor: readerColors.background
-    }]}><StatusBar hidden={settings.showStatusBar===false} style={systemScheme==='dark'&&settings.followSystem||['#202623','#1D2237','#1C3027'].includes(readerColors.background)?'light':'dark'} /><GlassSurface style={s.readerToolbar} prominent><Button onPress={() => setBookId(null)}>‹ 书架</Button><Button onPress={() => setDetailTarget(book)}>详情</Button><Button onPress={() => setPanel('目录')}>目录</Button><Button onPress={toggleSpeech}>{speaking ? '停止' : '朗读'}</Button><Button onPress={() => setPanel('排版')}>Aa</Button></GlassSurface><ImageBackground source={settings.image ? {
-        uri: settings.image
-      } : undefined} style={{
-        flex: 1
-      }} imageStyle={{
-        opacity: (settings.imageOpacity??30)/100
-      }}><ScrollView key={book.id + ':' + book.index} ref={reader} contentContainerStyle={{
-          paddingLeft:settings.marginLeft??26,paddingRight:settings.marginRight??26,paddingTop:settings.marginTop??26,
-          paddingBottom: settings.marginBottom??70
-        }} onContentSizeChange={(w, h) => {
-          if (restore.current) {
-            reader.current?.scrollTo({
-              y: (book.progress || 0) * h,
-              animated: false
-            });
-            restore.current = false;
-          }
-        }} scrollEventThrottle={250} onScroll={e => {
-          const n = Date.now();
-          if (n - lastSave.current > 500) {
-            lastSave.current = n;
-            updateBook(book.id, {
-              progress: e.nativeEvent.contentOffset.y / Math.max(1, e.nativeEvent.contentSize.height)
-            });
-          }
-        }}><Text style={{
-            fontSize: 14,
-            color: readerColors.ink,
-            opacity: .55,
-            marginBottom: 28
-          }}>{book.title} · {book.index + 1}/{book.chapters.length}</Text><Text style={{
-            fontSize: 26,
-            color: settings.ink,
-            fontWeight: '600',
-            marginBottom: 26
-          }}>{chapter.title}</Text><View>{(chapter.content||'正文尚未加载，请重新进入本书重试。').split(/\n+/).filter(line=>line.trim()).map((line,i)=><Text key={i} selectable style={{color:readerColors.ink,fontFamily:fontReady??undefined,fontSize:settings.size,lineHeight:settings.size*settings.spacing,fontWeight:settings.fontWeight||'400',letterSpacing:settings.letterSpacing||0,textAlign:settings.textAlign||'left',textDecorationLine:settings.underline?'underline':'none',marginBottom:settings.paragraphGap??12}}>{'　'.repeat(settings.indent??2)+line.trim()}</Text>)}</View></ScrollView></ImageBackground><GlassSurface style={s.readerToolbar} prominent><Button disabled={busy || book.index === 0} onPress={() => goChapter(book.index - 1)}>上一章</Button><Button onPress={toggleBookmark}>{(book.bookmarks || []).includes(book.index) ? '已加书签' : '＋ 书签'}</Button><Button disabled={busy || book.index === book.chapters.length - 1} onPress={() => goChapter(book.index + 1)}>下一章</Button></GlassSurface><Modal visible={!!panel} animationType="slide" onRequestClose={() => setPanel(null)}><SafeAreaView style={s.root}><GlassSurface style={s.readerToolbar} prominent><Text style={s.heading}>{panel}</Text><Button onPress={() => setPanel(null)}>完成</Button></GlassSurface><ScrollView>{panel === '排版' ? settingView : book.chapters.map((c, i) => <TouchableOpacity disabled={busy} key={i} style={s.catalog} onPress={() => goChapter(i)}><Text style={{
+    }]}><StatusBar hidden={settings.showStatusBar===false} style={systemScheme==='dark'&&settings.followSystem||['#202623','#1D2237','#1C3027'].includes(readerColors.background)?'light':'dark'} />{toolbarVisible&&<GlassSurface style={s.readerToolbar} prominent><Button onPress={() => setBookId(null)}>‹ 书架</Button><Button onPress={() => setDetailTarget(book)}>详情</Button><Button onPress={() => setPanel('目录')}>目录</Button><Button onPress={toggleSpeech}>{speaking ? '停止' : '朗读'}</Button><Button onPress={() => setPanel('排版')}>Aa</Button></GlassSurface>}<ReaderView key={book.id+':'+book.index} ref={reader} book={book} chapter={chapter} settings={{...settings,...readerColors,speechHighlight:systemScheme==='dark'?settings.speechHighlightDark:settings.speechHighlightLight}} controlsActive={!panel&&!detailTarget} volumeActive={!speaking} onProgress={progress=>{const n=Date.now();if(n-lastSave.current>400){lastSave.current=n;updateBook(book.id,{progress});}}} onParagraph={index=>{lastParagraph.current=index;}} onChapter={direction=>goChapter(book.index+direction)} onExit={()=>setBookId(null)} onMenu={()=>setToolbarVisible(v=>!v)}/>{toolbarVisible&&<GlassSurface style={s.readerToolbar} prominent><Button disabled={busy || book.index === 0} onPress={() => goChapter(book.index - 1)}>上一章</Button><Button onPress={toggleBookmark}>{(book.bookmarks || []).includes(book.index) ? '已加书签' : '＋ 书签'}</Button><Button disabled={busy || book.index === book.chapters.length - 1} onPress={() => goChapter(book.index + 1)}>下一章</Button></GlassSurface>}{speaking&&settings.speechView==='专注'&&<GlassSurface style={{position:'absolute',bottom:90,left:20,right:20,padding:20}}><Text style={{fontSize:22,color:settings.ink}}>{(chapter.content||'').split(/\n+/).filter(x=>x.trim())[speechParagraph]}</Text><Button onPress={toggleSpeech}>停止朗读</Button></GlassSurface>}<Modal visible={!!panel} animationType="slide" onRequestClose={() => setPanel(null)}><SafeAreaView style={s.root}><GlassSurface style={s.readerToolbar} prominent><Text style={s.heading}>{panel}</Text><Button onPress={() => setPanel(null)}>完成</Button></GlassSurface><ScrollView>{panel === '排版' ? settingView : book.chapters.map((c, i) => <TouchableOpacity disabled={busy} key={i} style={s.catalog} onPress={() => goChapter(i)}><Text style={{
                 color: i === book.index ? '#426B56' : '#333'
               }}>{c.title}</Text></TouchableOpacity>)}</ScrollView></SafeAreaView></Modal></SafeAreaView>{detailSheet}</AppearanceProvider>;
   return <AppearanceProvider settings={{...settings,uiFontFamily:fontReady}}><Home fontPanel={fontPanel} fontReady={fontReady} onExportTheme={exportTheme} onImportTheme={importTheme} pickImage={kind=>run(()=>pick(kind))} data={data} tab={tab} setTab={setTab} busy={busy} onBookDetails={setDetailTarget} openBook={openBook} removeBook={b => Alert.alert('移除书籍', b.title, [{

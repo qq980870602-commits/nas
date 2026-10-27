@@ -1,12 +1,12 @@
 import React,{createContext,useContext,useEffect,useRef,useState} from 'react';
-import {AccessibilityInfo,Animated,Platform,Pressable,StyleSheet,Text,TextInput,View} from 'react-native';
+import {AccessibilityInfo,Animated,Platform,Pressable,StyleSheet,Text,TextInput,Image,useColorScheme,View} from 'react-native';
 import {BlurView} from 'expo-blur';
 import {GlassView,isGlassEffectAPIAvailable,isLiquidGlassAvailable} from 'expo-glass-effect';
 import {rgba} from './appearance.mjs';
 import {LinearGradient} from 'expo-linear-gradient';
 
 const Appearance=createContext({});
-export function AppearanceProvider({settings,children}){return <Appearance.Provider value={settings||{}}>{children}</Appearance.Provider>;}
+export function AppearanceProvider({settings,children}){const scheme=useColorScheme();const value=scheme==='dark'&&settings?.appFollowSystem?{...settings,appBackground:settings.appDarkBackground,uiInk:settings.appDarkInk,cardColor:settings.darkCardColor}:settings||{};return <Appearance.Provider value={value}>{children}</Appearance.Provider>;}
 const GlassPreferences=createContext({reduceMotion:false,reduceTransparency:false});
 const AnimatedPressable=Animated.createAnimatedComponent(Pressable);
 export function GlassProvider({children}) {
@@ -22,13 +22,15 @@ export function GlassProvider({children}) {
   },[]);
   return <GlassPreferences.Provider value={preferences}>{children}</GlassPreferences.Provider>;
 }
-function AppearanceText({children}){const appearance=useContext(Appearance);const apply=child=>{if(!React.isValidElement(child))return child;if(child.type===Animated.Text)return child;return React.cloneElement(child,{...(child.type===Text?{style:[child.props.style,appearance.uiFont&&appearance.uiFontFamily?{fontFamily:appearance.uiFontFamily}:null]}:{}),...(child.props.children?{children:React.Children.map(child.props.children,apply)}:{})});};return <>{React.Children.map(children,apply)}</>;}
+function AppearanceText({children,contentCard=false}){const appearance=useContext(Appearance);const apply=child=>{if(!React.isValidElement(child))return child;if(child.type===Animated.Text)return child;return React.cloneElement(child,{...(child.type===Text?{style:[child.props.style,contentCard?{color:appearance.uiInk||'#355B5D'}:null,appearance.uiFont&&appearance.uiFontFamily?{fontFamily:appearance.uiFontFamily}:null]}:{}),...(child.props.children?{children:React.Children.map(child.props.children,apply)}:{})});};return <>{React.Children.map(children,apply)}</>;}
+export function ThemeText({style,...props}){const a=useContext(Appearance);return <Text {...props} style={[style,a.uiFont&&a.uiFontFamily?{fontFamily:a.uiFontFamily}:null]}/>;}
 function nativeGlassSupported() {
   try{return Platform.OS==='ios'&&isGlassEffectAPIAvailable()&&isLiquidGlassAvailable();}catch{return false;}
 }
 export function GlassMaterial({radius=26,prominent=false,dark=false}) {
   const {reduceTransparency}=useContext(GlassPreferences);
   const appearance=useContext(Appearance);
+  if(appearance.transparentMode)return <View pointerEvents='none' style={[StyleSheet.absoluteFill,{borderRadius:radius,backgroundColor:'transparent'}]}/>;
   if(appearance.glass===false)return <View pointerEvents='none' style={[StyleSheet.absoluteFill,{borderRadius:radius,backgroundColor:dark?'#29343B':'#F2F6F3'}]}/>;
   const nativeGlass=!reduceTransparency&&nativeGlassSupported();
   return <View pointerEvents="none" style={[StyleSheet.absoluteFill,{borderRadius:radius,overflow:'hidden'}]}>
@@ -41,12 +43,13 @@ export function GlassMaterial({radius=26,prominent=false,dark=false}) {
 export function GlassSurface({children,style,onPress,onLongPress,disabled,prominent=false,dark=false,contentCard=false,...props}) {
   const {reduceMotion}=useContext(GlassPreferences),scale=useRef(new Animated.Value(1)).current;
   const interactive=!!(onPress||onLongPress),Component=interactive?AnimatedPressable:Animated.View;
-  const appearance=useContext(Appearance);
+  const appearance=useContext(Appearance),scheme=useColorScheme();
+  const cardImage=scheme==='dark'?(appearance.cardImageDark||appearance.cardImageLight):appearance.cardImageLight;
   const radius=contentCard?(appearance.cardRadius??26):(StyleSheet.flatten(style)?.borderRadius??26);
   const contentStyle=contentCard?{borderWidth:appearance.borderWidth??1,borderColor:rgba(appearance.borderColor,appearance.borderOpacity??73),borderRadius:radius}:null;
   const animate=value=>{if(reduceMotion)return;Animated.spring(scale,{toValue:value,useNativeDriver:true,speed:28,bounciness:3}).start();};
   return <Component {...props} onPress={onPress} onLongPress={onLongPress} disabled={disabled} onPressIn={interactive?()=>animate(.977):undefined} onPressOut={interactive?()=>animate(1):undefined} accessibilityRole={interactive?'button':props.accessibilityRole} accessibilityState={interactive?{disabled:!!disabled,...props.accessibilityState}:props.accessibilityState} style={[g.surface,style,contentStyle,{backgroundColor:'transparent',borderRadius:radius},disabled&&{opacity:.42},interactive&&{transform:[{scale}]}]}>
-    {!contentCard||appearance.cardEnabled!==false?<GlassMaterial radius={radius} prominent={prominent} dark={dark}/>:null}{contentCard&&appearance.cardEnabled!==false&&<View pointerEvents='none' style={[StyleSheet.absoluteFill,{borderRadius:radius,backgroundColor:rgba(appearance.cardColor,appearance.cardOpacity??43)}]}/>}<AppearanceText>{children}</AppearanceText>
+    {!contentCard||appearance.cardEnabled!==false?<GlassMaterial radius={radius} prominent={prominent} dark={dark}/>:null}{contentCard&&appearance.cardEnabled!==false&&<View pointerEvents='none' style={[StyleSheet.absoluteFill,{borderRadius:radius,backgroundColor:rgba(appearance.cardColor,appearance.cardOpacity??43)}]}/>}{contentCard&&cardImage&&<Image pointerEvents='none' source={{uri:cardImage}} resizeMode={appearance.cardImageMode||'cover'} style={[StyleSheet.absoluteFill,{borderRadius:radius,opacity:(appearance.cardOpacity??43)/100}]}/>}<AppearanceText contentCard={contentCard}>{children}</AppearanceText>
   </Component>;
 }
 export function GlassInput({style,...props}) {

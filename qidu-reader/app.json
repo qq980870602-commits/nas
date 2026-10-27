@@ -2,7 +2,7 @@
   "expo": {
     "name": "栖读",
     "slug": "qidu-reader",
-    "version": "0.8.0",
+    "version": "0.9.0",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -15,7 +15,8 @@
     "plugins": [
       "expo-document-picker",
       "expo-font",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-audio"
     ],
     "platforms": [
       "ios",

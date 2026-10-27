@@ -1,5 +1,6 @@
+import {ThemeText as Text} from './Glass.jsx';
 import React,{useEffect,useState} from 'react';
-import {Alert,Platform,StyleSheet,Text,TextInput,TouchableOpacity,View} from 'react-native';
+import {Alert,Platform,StyleSheet,TextInput,TouchableOpacity,View} from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import * as Application from 'expo-application';
 import * as Crypto from 'expo-crypto';

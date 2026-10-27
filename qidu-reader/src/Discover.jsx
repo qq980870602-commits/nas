@@ -1,5 +1,6 @@
+import {ThemeText as Text} from './Glass.jsx';
 import React,{useEffect,useRef,useState} from 'react';
-import {ActivityIndicator,FlatList,Image,Modal,SafeAreaView,ScrollView,StyleSheet,Text,View} from 'react-native';
+import {ActivityIndicator,FlatList,Image,Modal,SafeAreaView,ScrollView,StyleSheet,View} from 'react-native';
 import {isDahuilang} from './dahuilang.mjs';
 import {isSudugu} from './source-types.mjs';
 import {discoveryClient} from './discovery-client.mjs';

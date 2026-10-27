@@ -1,5 +1,6 @@
+import {ThemeText as Text} from './Glass.jsx';
 import React,{useEffect,useRef,useState} from 'react';
-import {ActivityIndicator,Image,StyleSheet,Text,View} from 'react-native';
+import {ActivityIndicator,Image,StyleSheet,View} from 'react-native';
 import {bookInfo,catalog} from './source.mjs';
 import {GlassSurface} from './Glass.jsx';
 import {formatWordCount} from './book-metadata.mjs';
