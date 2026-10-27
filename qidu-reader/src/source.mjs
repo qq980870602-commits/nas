@@ -87,3 +87,6 @@ export async function chapterText(source, chapter) {
   if (!content.trim()) throw new Error('正文为空，请检查书源规则');
   return content;
 }
+
+export async function chapterData(source,chapter){if(isDahuilang(source))return dahuilangClient.chapterData(source,chapter);return {content:await chapterText(source,chapter),communityReviews:[],communityLoaded:true};}
+export async function communityPageRequest(source,url){if(!isDahuilang(source))throw Error('此书源尚未提供段评接口');return dahuilangClient.communityPage(source,url);}

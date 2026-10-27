@@ -2,11 +2,13 @@ import {ThemeText as Text} from './Glass.jsx';
 import React,{useEffect,useRef,useState} from 'react';
 import {ActivityIndicator,Image,StyleSheet,View} from 'react-native';
 import {bookInfo,catalog} from './source.mjs';
-import {GlassSurface} from './Glass.jsx';
+import {bundledCovers} from './bundled-theme.js';
+import {GlassSurface,useAppearance} from './Glass.jsx';
 import {formatWordCount} from './book-metadata.mjs';
 
 function Action({children,onPress,disabled,primary=false}){return <GlassSurface disabled={disabled} onPress={onPress} style={[s.action,primary&&{borderColor:'#82B6A6'}]}><Text style={{fontSize:14,color:'#2B6D60',fontWeight:primary?'600':'400'}}>{children}</Text></GlassSurface>;}
 export default function BookDetails({book,source=book?.source,onRead,onAdd,onFetched,busy=false,loadInfo=bookInfo,loadCatalog=catalog}){
+  const appearance=useAppearance();
   const [details,setDetails]=useState(book),[loading,setLoading]=useState(false),[error,setError]=useState(''),[refresh,setRefresh]=useState(0),[imageFailed,setImageFailed]=useState(false);
   const [toc,setToc]=useState(book?.chapters||[]),[tocOpen,setTocOpen]=useState(false),[tocBusy,setTocBusy]=useState(false),[tocError,setTocError]=useState(''),[tocLimit,setTocLimit]=useState(50);
   const fetchedCallback=useRef(onFetched),epoch=useRef(0),tocEpoch=useRef(0);fetchedCallback.current=onFetched;
@@ -30,7 +32,7 @@ export default function BookDetails({book,source=book?.source,onRead,onAdd,onFet
   let host='';try{host=new URL(details.url||details.originUrl||source?.bookSourceUrl).host;}catch{}
   const tags=[formatWordCount(details.wordCount),details.status,details.category].filter(Boolean);
   return <View style={{gap:18,paddingBottom:25}}>
-    <GlassSurface contentCard style={s.hero}><View style={s.cover}>{details.coverUrl&&!imageFailed?<Image source={{uri:details.coverUrl}} onError={()=>setImageFailed(true)} style={{width:'100%',height:'100%'}} accessibilityLabel={details.title+'封面'}/>:<><Text style={s.leaf}>⸙</Text><Text numberOfLines={4} style={s.coverText}>{details.title}</Text></>}</View><View style={{flex:1,gap:12}}><Text style={s.title}>{details.title}</Text><Text style={s.text}>作者：{details.author||'未提供'}</Text><View style={s.row}>{tags.map((value,index)=><Text key={index} style={s.tag}>{value}</Text>)}</View></View></GlassSurface>
+    <GlassSurface contentCard style={s.hero}><View style={s.cover}>{(details.coverUrl&&!imageFailed||appearance.bundledThemeEnabled)?<Image resizeMode='contain' source={appearance.bundledThemeEnabled&&(appearance.forceDefaultCover||!details.coverUrl||imageFailed)?bundledCovers[appearance.defaultCover||0]:{uri:details.coverUrl}} onError={()=>setImageFailed(true)} style={{width:'100%',height:'100%'}} accessibilityLabel={details.title+'封面'}/>:<><Text style={s.leaf}>⸙</Text><Text numberOfLines={4} style={s.coverText}>{details.title}</Text></>}</View><View style={{flex:1,gap:12}}><Text style={s.title}>{details.title}</Text><Text style={s.text}>作者：{details.author||'未提供'}</Text><View style={s.row}>{tags.map((value,index)=><Text key={index} style={s.tag}>{value}</Text>)}</View></View></GlassSurface>
     <View style={s.row}><Action primary disabled={busy} onPress={()=>onRead?.(details)}>{details.id?'继续阅读':'开始阅读'}</Action>{!details.id&&<Action disabled={busy} onPress={()=>onAdd?.(details)}>＋ 加入书架</Action>}<Action disabled={loading} onPress={()=>setRefresh(value=>value+1)}>↻ 刷新详情</Action></View>
     {loading&&<View style={s.row}><ActivityIndicator color="#35776A"/><Text style={s.text}>正在读取作品信息…</Text></View>}
     {!!error&&<GlassSurface contentCard style={s.card}><Text style={s.error}>详情刷新失败：{error}</Text><Text style={s.caption}>已有书籍和阅读进度会保留，可以重试或继续阅读。</Text></GlassSurface>}

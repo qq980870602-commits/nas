@@ -2,6 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createDahuilangClient,dahuilangServers,dahuilangConfig,isDahuilang} from '../src/dahuilang.mjs';
 const source={bookSourceName:'🍅大灰狼聚合5.9.30(vip完全版)',bookSourceUrl:'大灰狼融合VIP5.0',jsLib:"var host = ['https://one.example','http://unsafe.example','https://two.example'];globalThis.untrustedExecuted = true;"};
+test('段评正文使用会员会话，社区页面仅携带当前线路 Cookie',async()=>{
+  const client=createDahuilangClient({sessionProvider:async()=>({token:'session',deviceId:'device',server:'https://one.example'}),fetcher:async(url,options)=>{
+    assert.equal(new URL(url).searchParams.get('review'),'1');
+    assert.equal(JSON.parse(options.body).god,true);
+    assert.equal(options.headers.Cookie,'qttoken=session; deviceId=device');
+    return Response.json({code:0,content:'<p>真实正文<comment ident="/fanqie_comment?paragraph_id=2" count="7"/></p>'});
+  }});
+  const data=await client.chapterData(source,{dahuilang:{book_id:'1',item_id:'2',source:'番茄'}});
+  assert.equal(data.content,'真实正文');assert.equal(data.communityReviews[0].count,7);
+  assert.ok(!JSON.stringify(data).includes('session'));
+  const page=await client.communityPage(source,data.communityReviews[0].url);
+  assert.equal(page.headers.Cookie,'qttoken=session; deviceId=device');
+  await assert.rejects(()=>client.communityPage(source,'https://other.example/fanqie_comment'),/当前书源/);
+  const anonymous=createDahuilangClient();
+  await assert.rejects(()=>anonymous.communityPage(source,'https://one.example/fanqie_comment'),/登录/);
+});
 test('静态识别线路，不执行书源脚本，限制版本及 HTTPS',()=>{
   assert.equal(isDahuilang(source),true);assert.deepEqual(dahuilangServers(source),['https://one.example','https://two.example']);assert.equal(globalThis.untrustedExecuted,undefined);
   assert.equal(isDahuilang({...source,bookSourceName:'大灰狼聚合5.9.31(vip完全版)'}),false);

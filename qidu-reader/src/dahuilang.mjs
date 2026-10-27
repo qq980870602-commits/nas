@@ -1,3 +1,4 @@
+import {parseReviewContent,reviewAddress} from './paragraphs.mjs';
 import {parseDocument} from 'htmlparser2';
 import {textContent} from 'domutils';
 
@@ -119,6 +120,12 @@ export function createDahuilangClient({fetcher=(...args)=>fetch(...args),session
       });
       if(!chapters.length)throw new Error('目录为空，可能是访问权限或平台返回异常');
       return chapters;
+    },
+    async communityPage(source,url){
+      const {server}=dahuilangConfig(source);const uri=reviewAddress(url,server);const session=await sessionProvider(source);if(!session?.token||!session.deviceId||session.server!==server)throw Error('请先登录当前大灰狼线路');if(/[\r\n;]/.test(session.token+session.deviceId))throw Error('会话格式无效，请重新登录');return {uri,headers:{Cookie:'qttoken='+session.token+'; deviceId='+session.deviceId}};
+    },
+    async chapterData(source,chapter){
+      const meta=chapter.dahuilang;if(!meta?.item_id||!meta.source)throw Error('章节信息不完整，请重新加载书籍');const result=await request(source,'/content',{method:'POST',query:{review:'1'},body:{html:'',item_id:meta.item_id,source:meta.source,tab:'小说',tone_id:'4',variable:JSON.stringify({custom:''}),version:'4.11.5.1',app:'栖读',god:true}});if(typeof result.content!=='string'||!result.content.trim())throw Error(String(result.msg||'正文为空，请检查访问权限'));const parsed=parseReviewContent(result.content,dahuilangConfig(source).server,meta);if(!parsed.content)throw Error('本章节没有可显示的正文');return parsed;
     },
     async chapterText(source,chapter) {
       const meta=chapter.dahuilang;

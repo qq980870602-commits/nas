@@ -7,9 +7,12 @@ import * as Font from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import * as Speech from 'expo-speech';
 import * as Sharing from 'expo-sharing';
-import {prepareContent,validateReplacementRule} from './src/text-processing.mjs';
+import {prepareContent,readerParagraphs,validateReplacementRule} from './src/text-processing.mjs';
 import {backupSnapshot} from './src/webdav.mjs';
+import {loadBundledTheme,mergeBundledTheme,brandLogos} from './src/bundled-theme.js';
 import CloudSync from './src/CloudSync.jsx';
+import ParagraphNotes from './src/ParagraphNotes.jsx';
+import {isDahuilang} from './src/dahuilang.mjs';
 import ReaderView from './src/ReaderView.jsx';
 import {createSpeechController} from './src/speech-controller.js';
 import {parseTtsSources} from './src/tts.mjs';
@@ -24,7 +27,7 @@ import { recordTime } from './src/stats.mjs';
 import DahuilangAccount, { readDahuilangSession } from './src/DahuilangAccount.jsx';
 import { configureDahuilangSessionProvider } from './src/dahuilang.mjs';
 import { importSources, splitChapters } from './src/rules.mjs';
-import { search, catalog, chapterText, bookInfo } from './src/source.mjs';
+import { search, catalog, chapterText, chapterData, bookInfo } from './src/source.mjs';
 import { downloadSourceText } from './src/source-import.mjs';
 const LIBRARY = FS.documentDirectory + 'qidu-library.json';
 if (Platform.OS !== 'web') configureDahuilangSessionProvider(readDahuilangSession);
@@ -69,6 +72,7 @@ function ReaderApp() {
   useEffect(()=>{if(!ready||!data.settings.startupEnabled||!data.settings.startupImage)return;setStartupVisible(true);const timer=setTimeout(()=>setStartupVisible(false),1800);return()=>clearTimeout(timer);},[ready]);
   useEffect(()=>{Speech.getAvailableVoicesAsync().then(items=>setVoices(items.filter(x=>/^zh|^cmn|^yue/i.test(x.language)))).catch(()=>{});},[]);
   const [detailTarget, setDetailTarget] = useState(null);
+  const [annotationIndex,setAnnotationIndex]=useState(0);
   const [bookId, setBookId] = useState(null),
     [panel, setPanel] = useState(null),
     [busy, setBusy] = useState(false);
@@ -78,6 +82,7 @@ function ReaderApp() {
     [sourceText, setSourceText] = useState('');
   const [sourceUrl, setSourceUrl] = useState('https://sy.langge.uk/api/download/安卓阅读app-大灰狼融合5.0(vip完全版).json');
   const [fontReady, setFontReady] = useState(null),
+    [uiFontReady,setUiFontReady]=useState(null),
     [speaking, setSpeaking] = useState(false);
   const speechToken = useRef(0);
   const speechController=useRef(null);if(!speechController.current)speechController.current=createSpeechController();
@@ -121,6 +126,7 @@ function ReaderApp() {
   useEffect(() => {
     (async () => {
       try {
+        const bundled=await loadBundledTheme();
         const info = await FS.getInfoAsync(LIBRARY);
         if (info.exists) {
           const parsed = JSON.parse(await FS.readAsStringAsync(LIBRARY));
@@ -128,13 +134,9 @@ function ReaderApp() {
           setData({
             ...initial,
             ...parsed,
-            settings: {
-              ...initial.settings,
-              ...parsed.settings,...cleanTheme(parsed.settings||{}),
-              fonts:parsed.settings?.fonts|| (parsed.settings?.font?[parsed.settings.font]:[])
-            }
+            settings:mergeBundledTheme({...initial.settings,...parsed.settings,...cleanTheme(parsed.settings||{})},bundled)
           });
-        }
+        }else setData({...initial,settings:mergeBundledTheme(initial.settings,bundled)});
       } catch (e) {
         saveAllowed.current = false;
         Alert.alert('读取存储失败', e.message + '。为保留原数据，本次会话暂停保存。');
@@ -157,6 +159,7 @@ function ReaderApp() {
     }, 350);
     return () => clearTimeout(timer);
   }, [data, ready]);
+  useEffect(()=>{let alive=true;const f=settings.uiFontDefinition;if(!f){setUiFontReady(null);return;}Font.loadAsync({[f.name]:f.uri}).then(()=>{if(alive)setUiFontReady(f.name);}).catch(()=>{});return()=>{alive=false;};},[settings.uiFontDefinition?.uri]);
   useEffect(() => {
     const f = settings.font;
     if (!f) {
@@ -219,7 +222,7 @@ function ReaderApp() {
     if(!chapter?.content){Alert.alert('没有正文','请先加载当前章节');return;}
     setSpeaking(true);
     const source=(settings.ttsSources||[]).find(x=>x.id===settings.ttsSourceId);
-    speechController.current.start({content:prepareContent(chapter.content,settings),settings,source,startParagraph:lastParagraph.current,onParagraph:index=>{setSpeechParagraph(index);reader.current?.highlight(index);},onRange:(index,offset,length)=>reader.current?.highlight(index,offset,length),onDone:()=>{setSpeaking(false);reader.current?.clearHighlight();},onError:e=>{setSpeaking(false);reader.current?.clearHighlight();Alert.alert('朗读失败',e.message);}});
+    speechController.current.start({content:readerParagraphs(chapter.content,settings),settings,source,startParagraph:lastParagraph.current,onParagraph:index=>{setSpeechParagraph(index);reader.current?.highlight(index);},onRange:(index,offset,length)=>reader.current?.highlight(index,offset,length),onDone:()=>{setSpeaking(false);reader.current?.clearHighlight();},onError:e=>{setSpeaking(false);reader.current?.clearHighlight();Alert.alert('朗读失败',e.message);}});
   };
   const toggleBookmark = () => {
     const marks = book.bookmarks || [];
@@ -234,12 +237,12 @@ function ReaderApp() {
     await Sharing.shareAsync(uri, {
       mimeType: 'application/json',
       UTI: 'public.json',
-      dialogTitle: '保存栖读备份'
+      dialogTitle: '保存众阅备份'
     });
   });
   const applyBackup=backup=>{
     const saved = backup.data;
-    if (backup.format !== 'qidu-backup' || backup.version !== 1 || !saved || !Array.isArray(saved.books) || !Array.isArray(saved.sources)) throw new Error('不是有效的栖读备份文件');
+    if (backup.format !== 'qidu-backup' || backup.version !== 1 || !saved || !Array.isArray(saved.books) || !Array.isArray(saved.sources)) throw new Error('不是有效的众阅备份文件');
     if(saved.settings?.cleanupRules){if(!Array.isArray(saved.settings.cleanupRules)||saved.settings.cleanupRules.length>100)throw Error('净化规则格式错误');for(const rule of saved.settings.cleanupRules)validateReplacementRule(rule);}
     if(saved.settings?.tocRules){if(!Array.isArray(saved.settings.tocRules))throw Error('目录规则格式错误');for(const rule of saved.settings.tocRules)validateTocRule(rule.pattern);}
     if (saved.books.some(b => typeof b.id !== 'string' || typeof b.title !== 'string' || !Array.isArray(b.chapters) || !b.chapters.length || !Number.isInteger(b.index) || b.index < 0 || b.index >= b.chapters.length || b.chapters.some(c => typeof c.title !== 'string' || c.content !== undefined && typeof c.content !== 'string'))) throw new Error('备份书籍数据不完整');
@@ -252,7 +255,7 @@ function ReaderApp() {
         ...initial.settings,
         ...saved.settings,...cleanTheme(saved.settings||{}),
         font: null,
-        fonts: [],
+        fonts:(settings.fonts||[]).filter(f=>f.bundled),uiFontDefinition:settings.uiFontDefinition,bundledPreset:settings.bundledPreset,brandLogoUris:settings.brandLogoUris,
         image: null,
         appImage: null,startupImage:null,startupEnabled:false,cardImageLight:null,cardImageDark:null,ttsSources:[],ttsSourceId:null
       }
@@ -361,23 +364,23 @@ function ReaderApp() {
       lastRead: Date.now()
     });
     setBookId(b.id);
-    if (b.source && !b.chapters[b.index].content) run(() => loadChapter(b, b.index));
+    if(b.source&&(!b.chapters[b.index].content||isDahuilang(b.source)&&!b.chapters[b.index].communityLoaded))run(()=>loadChapter(b,b.index,{preserveProgress:true}));
   };
-  const loadChapter = async (b, index) => {
-    const content = await chapterText(b.source, b.chapters[index]);
+  const loadChapter = async (b,index,{preserveProgress=false}={}) => {
+    let payload;try{payload=await chapterData(b.source,b.chapters[index]);}catch(error){if(!isDahuilang(b.source))throw error;payload={content:b.chapters[index].content||await chapterText(b.source,b.chapters[index]),communityReviews:[],communityLoaded:false,communityError:error.message};}
     const chapters = b.chapters.map((c, i) => i === index ? {
       ...c,
-      content
+      ...payload
     } : c);
     updateBook(b.id, {
       chapters,
       index,
-      progress: 0
+      progress:preserveProgress?(b.progress||0):0
     });
   };
   const goChapter = index => run(async () => {
     if (index < 0 || index >= book.chapters.length) return;
-    if (book.source && !book.chapters[index].content) await loadChapter(book, index);else updateBook(book.id, {
+    if (book.source && (!book.chapters[index].content||isDahuilang(book.source)&&!book.chapters[index].communityLoaded)) await loadChapter(book, index);else updateBook(book.id, {
       index,
       progress: 0
     });
@@ -408,27 +411,27 @@ function ReaderApp() {
       index: 0,
       progress: 0
     };
-    if (readNow) b.chapters[0].content = await chapterText(selectedSource, chapters[0]);
+    if(readNow){let payload;try{payload=await chapterData(selectedSource,chapters[0]);}catch(error){if(!isDahuilang(selectedSource))throw error;payload={content:await chapterText(selectedSource,chapters[0]),communityReviews:[],communityLoaded:false,communityError:error.message};}Object.assign(b.chapters[0],payload);}
     setData(d => ({
       ...d,
       books: [b, ...d.books]
     }));
-    if (readNow) setBookId(b.id);else Alert.alert('已加入书架', b.title);
+    if (readNow){setToolbarVisible(settings.readerStyle!=='极简');setBookId(b.id);}else Alert.alert('已加入书架', b.title);
   });
   const importTts=text=>run(async()=>{const imported=parseTtsSources(text);updateSettings({ttsSources:[...(settings.ttsSources||[]).filter(x=>!imported.some(y=>y.id===x.id)),...imported]});Alert.alert('已导入朗读源',imported.length+' 个');});
   const importTtsFile=()=>run(async()=>{const result=await Picker.getDocumentAsync({type:'*/*',copyToCacheDirectory:true});if(result.canceled)return;if(result.assets[0].size>256*1024)throw Error('朗读源配置超过 256KB');const imported=parseTtsSources(await FS.readAsStringAsync(result.assets[0].uri));updateSettings({ttsSources:[...(settings.ttsSources||[]),...imported]});});
   const exportTheme=()=>run(async()=>{
     if(!(await Sharing.isAvailableAsync()))throw Error('此设备不支持分享');const bundle={...themeFile(settings),version:2,assets:[]};let total=0;
-    for(const key of ['appImage','image','startupImage','cardImageLight','cardImageDark','font']){const value=settings[key],uri=key==='font'?value?.uri:value;if(!uri)continue;const info=await FS.getInfoAsync(uri);if(!info.exists)continue;if(info.size>8*1024*1024)throw Error('单个主题素材超过 8MB，请先更换较小文件');total+=info.size;if(total>24*1024*1024)throw Error('主题素材总量超过 24MB');bundle.assets.push({key,ext:uri.split('.').pop().toLowerCase(),label:key==='font'?value.label:undefined,data:await FS.readAsStringAsync(uri,{encoding:FS.EncodingType.Base64})});}
+    for(const key of ['appImage','image','startupImage','cardImageLight','cardImageDark','font']){const value=settings[key],uri=key==='font'?value?.uri:value;if(!uri)continue;if(key==='font'&&value.bundled){bundle.bundledFont='ZhongXingBi-Regular';continue;}const info=await FS.getInfoAsync(uri);if(!info.exists)continue;if(info.size>8*1024*1024)throw Error('单个主题素材超过 8MB，请先更换较小文件');total+=info.size;if(total>24*1024*1024)throw Error('主题素材总量超过 24MB');bundle.assets.push({key,ext:uri.split('.').pop().toLowerCase(),label:key==='font'?value.label:undefined,data:await FS.readAsStringAsync(uri,{encoding:FS.EncodingType.Base64})});}
     const uri=FS.cacheDirectory+'qidu-theme-'+Date.now()+'.json';await FS.writeAsStringAsync(uri,JSON.stringify(bundle));await Sharing.shareAsync(uri,{mimeType:'application/json',UTI:'public.json'});
   });
   const importTheme=()=>run(async()=>{
     const result=await Picker.getDocumentAsync({type:'*/*',copyToCacheDirectory:true});if(result.canceled)return;const asset=result.assets[0];if(asset.size>34*1024*1024)throw Error('主题文件不能超过 34MB');const text=await FS.readAsStringAsync(asset.uri),incoming=JSON.parse(text),config=parseTheme(text);if(incoming.assets&&!Array.isArray(incoming.assets))throw Error('主题素材格式错误');
     const assets=incoming.assets||[];if(assets.length>6)throw Error('主题素材过多');for(const item of assets){if(!['appImage','image','startupImage','cardImageLight','cardImageDark','font'].includes(item.key)||!(item.key==='font'?['ttf','otf']:['png','jpg','jpeg','webp']).includes(item.ext)||typeof item.data!=='string'||item.data.length>12*1024*1024||!/^[A-Za-z0-9+/]*={0,2}$/.test(item.data))throw Error('主题素材不合法');}
     for(const item of assets){const uri=FS.documentDirectory+'theme-'+item.key+'-'+Date.now()+'.'+item.ext;await FS.writeAsStringAsync(uri,item.data,{encoding:FS.EncodingType.Base64});if(item.key==='font'){const font={uri,name:'UserFont'+Date.now(),label:typeof item.label==='string'?item.label:'导入主题字体'};config.font=font;config.fonts=[...(settings.fonts||[]),font];}else config[item.key]=uri;}
-    updateSettings(config);Alert.alert('主题已导入');
+    if(incoming.bundledFont==='ZhongXingBi-Regular'){const font=(settings.fonts||[]).find(f=>f.bundled);if(font)config.font=font;}updateSettings(config);Alert.alert('主题已导入');
   });
-  const fontPanel=<View style={{gap:12}}><Text style={s.label}>字体管理 · {(settings.fonts||[]).length} 个自定义字体</Text><Choice items={[[null,'系统字体'],...(settings.fonts||[]).map(f=>[f.name,f.label||f.name])]} value={settings.font?.name||null} onChange={name=>updateSettings({font:(settings.fonts||[]).find(f=>f.name===name)||null})}/><Choice items={[[1,'＋ 导入 TTF / OTF']]} onChange={()=>run(()=>pick('font'))}/>{(settings.fonts||[]).map(f=><View key={f.name} style={{flexDirection:'row',alignItems:'center',gap:10}}><Text style={{flex:1,color:'#45665F'}}>{f.label||f.name}</Text><Button onPress={()=>updateSettings({fonts:(settings.fonts||[]).filter(x=>x.name!==f.name),...(settings.font?.name===f.name?{font:null}:{})})}>移除</Button></View>)}<Text style={{color:'#688077',fontSize:12}}>移除只取消字体列表引用，不影响书架。</Text></View>;
+  const fontPanel=<View style={{gap:12}}><Text style={s.label}>字体管理 · {(settings.fonts||[]).length} 个自定义字体</Text><Choice items={[[null,'系统字体'],...(settings.fonts||[]).map(f=>[f.name,f.label||f.name])]} value={settings.font?.name||null} onChange={name=>updateSettings({font:(settings.fonts||[]).find(f=>f.name===name)||null})}/><Choice items={[[1,'＋ 导入 TTF / OTF']]} onChange={()=>run(()=>pick('font'))}/>{(settings.fonts||[]).map(f=><View key={f.name} style={{flexDirection:'row',alignItems:'center',gap:10}}><Text style={{flex:1,color:'#45665F'}}>{f.label||f.name}</Text><Button disabled={!!f.bundled} onPress={()=>updateSettings({fonts:(settings.fonts||[]).filter(x=>x.name!==f.name),...(settings.font?.name===f.name?{font:null}:{})})}>{f.bundled?'内置':'移除'}</Button></View>)}<Text style={{color:'#688077',fontSize:12}}>移除只取消字体列表引用，不影响书架。</Text></View>;
   const renderSettings=initialTab=><ReaderSettings initialTab={initialTab} settings={settings} update={updateSettings} pickImage={kind=>run(()=>pick(kind))} fontReady={fontReady} fontPanel={fontPanel} voices={voices} speaking={speaking} onImportTts={importTts} onImportTtsFile={importTtsFile} onExport={exportTheme} onImport={importTheme}/>;
   const settingView=renderSettings('主题'),speechSettings=renderSettings('朗读');
   const detailSheet = <Modal visible={!!detailTarget} transparent presentationStyle="overFullScreen" animationType="slide" onRequestClose={() => setDetailTarget(null)}><SafeAreaView style={[s.root, {
@@ -442,14 +445,14 @@ function ReaderApp() {
             ...info
           });
         }} />}</ScrollView></SafeAreaView></Modal>;
-  if (!ready) return <><SafeAreaView style={s.root}><Text style={s.subtitle}>正在打开书架…</Text></SafeAreaView>{detailSheet}</>;
-  if(startupVisible)return <TouchableOpacity activeOpacity={1} style={{flex:1,backgroundColor:settings.appBackground}} onPress={()=>setStartupVisible(false)}><Image source={{uri:settings.startupImage}} style={{width:'100%',height:'100%'}} resizeMode='cover'/></TouchableOpacity>;
-  if (book) return <AppearanceProvider settings={{...settings,uiFontFamily:fontReady}}><SafeAreaView style={[s.root, {
+  if (!ready) return <SafeAreaView style={[s.root,{backgroundColor:'#FBF5E8',justifyContent:'center',alignItems:'center',gap:18}]}><Image source={brandLogos.B} resizeMode='contain' style={{width:170,height:170}}/><Text style={s.subtitle}>正在打开众阅…</Text></SafeAreaView>;
+  if(startupVisible)return <TouchableOpacity activeOpacity={1} style={{flex:1,backgroundColor:settings.startupBuiltinLogo?'#FBF5E8':settings.appBackground,justifyContent:'center',alignItems:'center'}} onPress={()=>setStartupVisible(false)}><Image source={{uri:settings.startupImage}} style={{width:settings.startupBuiltinLogo?'72%':'100%',height:settings.startupBuiltinLogo?'72%':'100%'}} resizeMode={settings.startupBuiltinLogo?'contain':'cover'}/></TouchableOpacity>;
+  if (book) return <AppearanceProvider settings={{...settings,uiFontFamily:fontReady||uiFontReady}}><SafeAreaView style={[s.root, {
       backgroundColor: readerColors.background
-    }]}><StatusBar hidden={settings.showStatusBar===false} style={systemScheme==='dark'&&settings.followSystem||['#202623','#1D2237','#1C3027'].includes(readerColors.background)?'light':'dark'} />{toolbarVisible&&<GlassSurface style={s.readerToolbar} prominent><Button onPress={() => setBookId(null)}>‹ 书架</Button><Button onPress={() => setDetailTarget(book)}>详情</Button><Button onPress={() => setPanel('目录')}>目录</Button><Button onPress={toggleSpeech}>{speaking ? '停止' : '朗读'}</Button><Button onPress={() => setPanel('排版')}>Aa</Button></GlassSurface>}<ReaderView key={book.id+':'+book.index} ref={reader} book={book} chapter={chapter} settings={{...settings,...readerColors,speechHighlight:systemScheme==='dark'?settings.speechHighlightDark:settings.speechHighlightLight}} controlsActive={!panel&&!detailTarget} volumeActive={!speaking} onProgress={progress=>{const n=Date.now();if(n-lastSave.current>400){lastSave.current=n;updateBook(book.id,{progress});}}} onParagraph={index=>{lastParagraph.current=index;}} onChapter={direction=>goChapter(book.index+direction)} onExit={()=>setBookId(null)} onMenu={()=>setToolbarVisible(v=>!v)}/>{toolbarVisible&&<GlassSurface style={s.readerToolbar} prominent><Button disabled={busy || book.index === 0} onPress={() => goChapter(book.index - 1)}>上一章</Button><Button onPress={toggleBookmark}>{(book.bookmarks || []).includes(book.index) ? '已加书签' : '＋ 书签'}</Button><Button disabled={busy || book.index === book.chapters.length - 1} onPress={() => goChapter(book.index + 1)}>下一章</Button></GlassSurface>}{speaking&&settings.speechView==='专注'&&<GlassSurface style={{position:'absolute',bottom:90,left:20,right:20,padding:20}}><Text style={{fontSize:22,color:settings.ink}}>{prepareContent(chapter.content,settings).split(/\n+/).filter(x=>x.trim())[speechParagraph]}</Text><Button onPress={toggleSpeech}>停止朗读</Button></GlassSurface>}<Modal visible={!!panel} animationType="slide" onRequestClose={() => setPanel(null)}><SafeAreaView style={s.root}><GlassSurface style={s.readerToolbar} prominent><Text style={s.heading}>{panel}</Text><Button onPress={() => setPanel(null)}>完成</Button></GlassSurface><ScrollView>{panel === '排版' ? settingView : book.chapters.map((c, i) => <TouchableOpacity disabled={busy} key={i} style={s.catalog} onPress={() => goChapter(i)}><Text style={{
+    }]}><StatusBar hidden={settings.showStatusBar===false} style={systemScheme==='dark'&&settings.followSystem||['#202623','#1D2237','#1C3027'].includes(readerColors.background)?'light':'dark'} />{toolbarVisible&&<GlassSurface style={s.readerToolbar} prominent><Button onPress={() => setBookId(null)}>‹ 书架</Button><Button onPress={() => setDetailTarget(book)}>详情</Button><Button onPress={() => setPanel('目录')}>目录</Button><Button onPress={toggleSpeech}>{speaking ? '停止' : '朗读'}</Button><Button onPress={() => setPanel('排版')}>Aa</Button></GlassSurface>}<ReaderView key={book.id+':'+book.index} ref={reader} book={book} chapter={chapter} settings={{...settings,...readerColors,speechHighlight:systemScheme==='dark'?settings.speechHighlightDark:settings.speechHighlightLight}} controlsActive={!panel&&!detailTarget} volumeActive={!speaking} onProgress={progress=>{const n=Date.now();if(n-lastSave.current>400){lastSave.current=n;updateBook(book.id,{progress});}}} onParagraph={index=>{lastParagraph.current=index;}} onBubble={index=>{setAnnotationIndex(index);setPanel('段落批注');}} onChapter={direction=>goChapter(book.index+direction)} onExit={()=>setBookId(null)} onMenu={()=>setToolbarVisible(v=>!v)}/>{toolbarVisible&&<GlassSurface style={s.readerToolbar} prominent><Button disabled={busy || book.index === 0} onPress={() => goChapter(book.index - 1)}>上一章</Button><Button onPress={toggleBookmark}>{(book.bookmarks || []).includes(book.index) ? '已加书签' : '＋ 书签'}</Button><Button disabled={busy || book.index === book.chapters.length - 1} onPress={() => goChapter(book.index + 1)}>下一章</Button></GlassSurface>}{speaking&&settings.speechView==='专注'&&<GlassSurface style={{position:'absolute',bottom:90,left:20,right:20,padding:20}}><Text style={{fontSize:22,color:settings.ink}}>{readerParagraphs(chapter.content,settings).find(p=>p.index===speechParagraph)?.text}</Text><Button onPress={toggleSpeech}>停止朗读</Button></GlassSurface>}<Modal visible={!!panel} animationType="slide" onRequestClose={() => setPanel(null)}><SafeAreaView style={s.root}><GlassSurface style={s.readerToolbar} prominent><Text style={s.heading}>{panel}</Text><Button onPress={() => setPanel(null)}>完成</Button></GlassSurface>{panel==='段落批注'?<ParagraphNotes book={book} chapter={chapter} index={annotationIndex} busy={busy} onUpdate={paragraphNotes=>updateBook(book.id,{paragraphNotes})} onRefresh={()=>run(()=>loadChapter(book,book.index,{preserveProgress:true}))}/>:<ScrollView>{panel === '排版' ? settingView : book.chapters.map((c, i) => <TouchableOpacity disabled={busy} key={i} style={s.catalog} onPress={() => goChapter(i)}><Text style={{
                 color: i === book.index ? '#426B56' : '#333'
-              }}>{c.title}</Text></TouchableOpacity>)}</ScrollView></SafeAreaView></Modal></SafeAreaView>{detailSheet}</AppearanceProvider>;
-  return <AppearanceProvider settings={{...settings,uiFontFamily:fontReady}}><Home cloudSync={<CloudSync data={data} onRestore={applyBackup}/>} speechSettings={speechSettings} fontPanel={fontPanel} fontReady={fontReady} onExportTheme={exportTheme} onImportTheme={importTheme} pickImage={kind=>run(()=>pick(kind))} data={data} tab={tab} setTab={setTab} busy={busy} onBookDetails={setDetailTarget} openBook={openBook} removeBook={b => Alert.alert('移除书籍', b.title, [{
+              }}>{c.title}</Text></TouchableOpacity>)}</ScrollView>}</SafeAreaView></Modal></SafeAreaView>{detailSheet}</AppearanceProvider>;
+  return <AppearanceProvider settings={{...settings,uiFontFamily:fontReady||uiFontReady}}><Home cloudSync={<CloudSync data={data} onRestore={applyBackup}/>} speechSettings={speechSettings} fontPanel={fontPanel} fontReady={fontReady} onExportTheme={exportTheme} onImportTheme={importTheme} pickImage={kind=>run(()=>pick(kind))} data={data} tab={tab} setTab={setTab} busy={busy} onBookDetails={setDetailTarget} openBook={openBook} removeBook={b => Alert.alert('移除书籍', b.title, [{
       text: '取消'
     }, {
       text: '移除',

@@ -1,19 +1,25 @@
 {
   "expo": {
-    "name": "栖读",
-    "slug": "qidu-reader",
-    "version": "0.9.1",
+    "name": "众阅",
+    "slug": "zhongyue-reader",
+    "version": "0.10.0",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.qidu.reader"
+      "bundleIdentifier": "com.qidu.reader",
+      "buildNumber": "10"
     },
     "android": {
       "package": "com.qidu.reader",
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "versionCode": 10,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/brand/zhongyue-B-1024.png",
+        "backgroundColor": "#FBF5E8"
+      }
     },
     "plugins": [
       "expo-document-picker",
@@ -26,6 +32,18 @@
           "recordAudioAndroid": false,
           "enableBackgroundRecording": false
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/brand/zhongyue-B-1024.png",
+          "imageWidth": 200,
+          "backgroundColor": "#FBF5E8",
+          "dark": {
+            "image": "./assets/brand/zhongyue-C-1024.png",
+            "backgroundColor": "#18332A"
+          }
+        }
       ]
     ],
     "platforms": [
@@ -35,6 +53,7 @@
     ],
     "web": {
       "bundler": "metro"
-    }
+    },
+    "icon": "./assets/brand/zhongyue-B-1024.png"
   }
 }

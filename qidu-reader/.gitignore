@@ -5,3 +5,5 @@ android/
 ios/
 work/
 artifacts/
+assets/fonts/*.ttf
+assets/font-parts/

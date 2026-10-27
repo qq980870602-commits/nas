@@ -2,11 +2,13 @@ import React,{createContext,useContext,useEffect,useRef,useState} from 'react';
 import {AccessibilityInfo,Animated,Platform,Pressable,StyleSheet,Text,TextInput,Image,useColorScheme,View} from 'react-native';
 import {BlurView} from 'expo-blur';
 import {GlassView,isGlassEffectAPIAvailable,isLiquidGlassAvailable} from 'expo-glass-effect';
+import {bundledTabs} from './bundled-theme.js';
 import {rgba} from './appearance.mjs';
 import {LinearGradient} from 'expo-linear-gradient';
 
 const Appearance=createContext({});
 export function AppearanceProvider({settings,children}){const scheme=useColorScheme();const value=scheme==='dark'&&settings?.appFollowSystem?{...settings,appBackground:settings.appDarkBackground,uiInk:settings.appDarkInk,cardColor:settings.darkCardColor}:settings||{};return <Appearance.Provider value={value}>{children}</Appearance.Provider>;}
+export function useAppearance(){return useContext(Appearance);}
 const GlassPreferences=createContext({reduceMotion:false,reduceTransparency:false});
 const AnimatedPressable=Animated.createAnimatedComponent(Pressable);
 export function GlassProvider({children}) {
@@ -67,7 +69,7 @@ export function GlassTabs({items,value,onChange,style}) {
   },[width,itemWidth,index,reduceMotion]);
   return <GlassSurface prominent style={[style,{flexDirection:'row',padding:6}]} onLayout={e=>setWidth(e.nativeEvent.layout.width)}>
     {width>0&&<Animated.View pointerEvents="none" style={{position:'absolute',top:6,bottom:6,left:6,width:itemWidth,borderRadius:32,borderWidth:1,borderColor:'#FFFFFFCC',backgroundColor:'#D1EEE378',transform:[{translateX:position}]}}><GlassMaterial radius={32}/></Animated.View>}
-    {items.map((item,i)=><Pressable key={item} accessibilityRole="tab" accessibilityLabel={item} accessibilityState={{selected:item===value}} onPress={()=>onChange(item)} style={{flex:1,minHeight:54,justifyContent:'center',alignItems:'center',gap:3}}><Animated.Text style={{color:value===item?'#205E56':'#617A7E',fontSize:23}}>{{'书架':'▤','发现':'✧','书源':'◎','统计':'▥','设置':'◇','书签':'▣'}[item]}</Animated.Text>{appearance.tabLabels!==false&&<Animated.Text style={{color:value===item?'#205E56':'#617A7E',fontSize:10,fontWeight:value===item?'700':'400'}}>{item}</Animated.Text>}</Pressable>)}
+    {items.map((item,i)=><Pressable key={item} accessibilityRole="tab" accessibilityLabel={item} accessibilityState={{selected:item===value}} onPress={()=>onChange(item)} style={{flex:1,minHeight:54,justifyContent:'center',alignItems:'center',gap:3}}>{appearance.bundledThemeEnabled&&bundledTabs[item]?<Image source={value===item?bundledTabs[item].selected:bundledTabs[item].normal} style={{width:31,height:31}} resizeMode='contain'/>:<Animated.Text style={{color:value===item?'#205E56':'#617A7E',fontSize:23}}>{{'书架':'▤','发现':'✧','书源':'◎','统计':'▥','设置':'◇','书签':'▣'}[item]}</Animated.Text>}{appearance.tabLabels!==false&&<Animated.Text style={{color:value===item?'#205E56':'#617A7E',fontSize:10,fontWeight:value===item?'700':'400'}}>{item}</Animated.Text>}</Pressable>)}
   </GlassSurface>;
 }
 const g=StyleSheet.create({surface:{borderRadius:26,borderWidth:1,borderColor:'rgba(255,255,255,0.73)',shadowColor:'#375F69',shadowOpacity:.1,shadowRadius:18,shadowOffset:{width:0,height:8},elevation:3}});
