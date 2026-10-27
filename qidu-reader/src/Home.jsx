@@ -7,6 +7,7 @@ import { dayKey, recentDays, streak } from './stats.mjs';
 import { isDahuilang } from './dahuilang.mjs';
 import {isSudugu} from './source-types.mjs';
 import Discover from './Discover.jsx';
+import ReplacementSettings from './ReplacementSettings.jsx';
 import {AppearanceSettings,TocSettings} from './Customize.jsx';
 import {appearanceDefaults} from './appearance.mjs';
 import BookDetails from './BookDetails.jsx';
@@ -155,11 +156,11 @@ export default function Home(p) {
                 }}>{x.bookSourceName.includes('大灰狼') ? '🍅' : x.bookSourceName.replace(/[^\u4e00-\u9fa5A-Za-z]/g, '').slice(0, 1) || '源'}</Text></View><Text numberOfLines={2} style={u.tileTitle}>{x.bookSourceName}</Text><Text numberOfLines={1} style={u.secondary}>{x.bookSourceGroup || '通常书源'}</Text></GlassSurface>)}</View>{!data.sources.length && <GlassSurface contentCard style={u.statsCard}><Text style={u.cardHeading}>添加你的聚合书源</Text><Text style={u.secondary}>支持链接、JSON 文件和粘贴导入。大灰狼等复杂书源需验证 JS 与登录规则。</Text><Action onPress={() => setSheet('导入')}>＋ 添加书源</Action></GlassSurface>}</>}
   {tab === '发现' && <Discover selectedSourceId={sourceId} client={p.discoveryClient} sources={data.sources} onAdd={addOnline} onSources={(selected) => {const target=selected?.bookSourceUrl?selected:data.sources.find(item=>isDahuilang(item)||isSudugu(item));if(target){setSourceId(target.bookSourceUrl);setSheet('详情');}else setTab('书源');}} busy={busy}/> }
   {tab === '统计' && <Statistics stats={data.stats || {}} />}
-  {tab === '设置' && <><GlassSurface style={u.settingsCard}><Row icon="▣" title="我的书签" detail={`${bookmarkCount} 个`} onPress={() => setTab('书签')} /><Row icon="▤" title="书源配置" detail={`${data.sources.length} 个`} onPress={() => setTab('书源')} /><Row icon="♬" title="朗读设置" detail={`${data.settings.speechRate || 1} 倍速`} onPress={() => setSheet('朗读设置')} /></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="▣" title="阅读设置" detail="背景 / 字体 / 排版" onPress={() => setSheet('阅读设置')} /><Row icon="Aa" title="字体管理" detail={(data.settings.fonts||[]).length+' 个'} onPress={() => setSheet('字体管理')} /><Row icon="☷" title="目录规则" detail={'内置 + '+(data.settings.tocRules||[]).length+' 条'} onPress={() => setSheet('目录规则')} /><View style={{
+  {tab === '设置' && <><GlassSurface style={u.settingsCard}><Row icon="▣" title="我的书签" detail={`${bookmarkCount} 个`} onPress={() => setTab('书签')} /><Row icon="▤" title="书源配置" detail={`${data.sources.length} 个`} onPress={() => setTab('书源')} /><Row icon="♬" title="朗读设置" detail={`${data.settings.speechRate || 1} 倍速`} onPress={() => setSheet('朗读设置')} /></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="▣" title="阅读设置" detail="背景 / 字体 / 排版" onPress={() => setSheet('阅读设置')} /><Row icon="Aa" title="字体管理" detail={(data.settings.fonts||[]).length+' 个'} onPress={() => setSheet('字体管理')} /><Row icon="≋" title="替换净化" detail={(data.settings.cleanupRules||[]).length+' 条'} onPress={()=>setSheet('替换净化')}/><Row icon="☷" title="目录规则" detail={'内置 + '+(data.settings.tocRules||[]).length+' 条'} onPress={() => setSheet('目录规则')} /><View style={{
               padding: 22
             }}><Text style={u.rowTitle}>章节预缓存　{data.settings.prefetch || 0} 章</Text><View style={u.chips}>{[0, 5, 10, 50].map(n => <Action key={n} onPress={() => p.updateSettings({
                   prefetch: n
-                })}>{n} 章</Action>)}</View><Text style={u.secondary}>手动缓存最近阅读的网络书籍，不在后台自动下载。</Text><Action disabled={busy || !data.settings.prefetch} onPress={onPrefetch}>开始缓存</Action></View></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="◉" title="外观主题" detail="主题 / 书架 / 卡片 / 效果" onPress={() => setSheet('外观主题')} /><Row icon="▥" title="统计" detail="阅读 / 听书" onPress={() => setTab('统计')} /><Row icon="▧" title="本地书籍" detail={`${data.books.filter(b => !b.source).length} 本`} onPress={importBook} /></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="⇧" title="导出备份" detail="文件分享" onPress={onBackup} /><Row icon="⇩" title="恢复备份" detail="从 JSON 文件" onPress={onRestore} /><Row icon="▱" title="缓存管理" detail={`${cacheCount} 章`} onPress={() => setSheet('缓存管理')} /></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="ⓘ" title="关于栖读" detail="0.9.0" onPress={() => setSheet('关于栖读')} /></GlassSurface></>}
+                })}>{n} 章</Action>)}</View><Text style={u.secondary}>手动缓存最近阅读的网络书籍，不在后台自动下载。</Text><Action disabled={busy || !data.settings.prefetch} onPress={onPrefetch}>开始缓存</Action></View></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="◉" title="外观主题" detail="主题 / 书架 / 卡片 / 效果" onPress={() => setSheet('外观主题')} /><Row icon="▥" title="统计" detail="阅读 / 听书" onPress={() => setTab('统计')} /><Row icon="▧" title="本地书籍" detail={`${data.books.filter(b => !b.source).length} 本`} onPress={importBook} /></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="☁" title="备份与同步" detail="WebDAV" onPress={()=>setSheet('备份与同步')}/><Row icon="⇧" title="导出备份" detail="文件分享" onPress={onBackup} /><Row icon="⇩" title="恢复备份" detail="从 JSON 文件" onPress={onRestore} /><Row icon="▱" title="缓存管理" detail={`${cacheCount} 章`} onPress={() => setSheet('缓存管理')} /></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="ⓘ" title="关于栖读" detail="0.9.1" onPress={() => setSheet('关于栖读')} /></GlassSurface></>}
   {tab === '书签' && <>{!bookmarkCount && <GlassSurface contentCard style={u.statsCard}><Text style={u.cardHeading}>收藏读到的片刻</Text><Text style={u.secondary}>在阅读器中点“书签”保存当前章节。</Text></GlassSurface>}{data.books.flatMap(b => (b.bookmarks || []).map(index => <GlassSurface key={b.id + ':' + index} style={u.statsCard} onPress={() => onBookmark(b, index)}><Text style={u.cardHeading}>{b.title}</Text><Text style={u.secondary}>▣ {b.chapters[index]?.title}</Text></GlassSurface>))}</>}
   </ScrollView><GlassTabs items={['书架', '发现', '书源', '统计', '设置']} value={tab === '书签' ? '书架' : tab} onChange={setTab} style={u.nav} />
   <Modal visible={!!sheet} transparent presentationStyle="overFullScreen" animationType="slide" onRequestClose={close}><SafeAreaView style={{
@@ -188,15 +189,17 @@ export default function Home(p) {
               }}>移除此书源</Action></>}
   {sheet === '作品详情' && onlineDetails && <BookDetails loadInfo={p.discoveryClient?.bookInfo} loadCatalog={p.discoveryClient?.catalog} book={onlineDetails.book} source={onlineDetails.source} busy={busy} onRead={info=>{close();addOnline(info,onlineDetails.source,true);}} onAdd={info=>{close();addOnline(info,onlineDetails.source,false);}}/>}
   {sheet === '阅读设置' && appearance}
-  {sheet === '朗读设置' && <><Text style={u.secondary}>使用系统中文语音朗读当前章节，章节结束后停止。iPhone 静音开关可能影响声音。</Text><View style={u.chips}>{[.7, .85, 1, 1.15, 1.3].map(rate => <Action key={rate} onPress={() => onSpeakRate(rate)}>{data.settings.speechRate === rate ? '● ' : ''}{rate} 倍速</Action>)}</View></>}
+  {sheet==='备份与同步'&&p.cloudSync}
+  {sheet==='朗读设置'&&(p.speechSettings||appearance)}
   {sheet==='字体管理'&&p.fontPanel}
+  {sheet==='替换净化'&&<ReplacementSettings rules={data.settings.cleanupRules||[]} onChange={cleanupRules=>p.updateSettings({cleanupRules})}/>}
   {sheet==='目录规则'&&<TocSettings rules={data.settings.tocRules||[]} onChange={tocRules=>p.updateSettings({tocRules})}/>}
   {sheet==='外观主题'&&<AppearanceSettings settings={data.settings} update={p.updateSettings} pickImage={p.pickImage||p.pickAppImage} onExport={p.onExportTheme} onImport={p.onImportTheme}/>}
   {sheet === '缓存管理' && <><Text style={u.secondary}>已有 {cacheCount} 章网络正文缓存。清理时保留每本书当前阅读章节，本地 TXT 与书签会保留。</Text><Action disabled={busy} onPress={() => {
                 onClearCache();
                 close();
               }}>清理其他章节缓存</Action></>}
-  {sheet === '关于栖读' && <><Text style={u.total}>栖读</Text><Text style={u.secondary}>版本 0.9.0 · 安卓 / iOS{'\n'}参考你提供的界面，独立实现。{'\n'}{'\n'}本机保存书架与统计，支持系统朗读和文件备份。大灰狼 5.9.30 已有专用小说适配；云同步和通用 JS 书源运行尚未完成。{'\n'}{'\n'}不提供书籍内容。复杂聚合源的兼容状态以实际验证结果为准。</Text></>}
+  {sheet === '关于栖读' && <><Text style={u.total}>栖读</Text><Text style={u.secondary}>版本 0.9.1 · 安卓 / iOS{'\n'}参考你提供的界面，独立实现。{'\n'}{'\n'}本机保存书架与统计，支持系统朗读和文件备份。大灰狼 5.9.30 已有专用小说适配；支持 WebDAV 手动同步；通用 JS 书源运行尚未完成。{'\n'}{'\n'}不提供书籍内容。复杂聚合源的兼容状态以实际验证结果为准。</Text></>}
   </ScrollView></SafeAreaView></Modal></SafeAreaView></ImageBackground>;
 }
 const u=StyleSheet.create({

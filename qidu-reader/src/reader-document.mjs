@@ -1,9 +1,8 @@
-import OpenCC from 'opencc-js';
-let simplify;
+import {prepareContent} from './text-processing.mjs';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function readerDocument({title,chapterTitle,content,settings={},progress=0,fontData=null,imageData=null}){
  const data=JSON.stringify({title,chapterTitle,settings,progress}).replace(/</g,'\\u003c');
- if(settings.simplified){simplify??=OpenCC.Converter({from:'tw',to:'cn'});content=simplify(String(content||''));chapterTitle=simplify(String(chapterTitle||''));}
+ content=prepareContent(content,settings);if(settings.simplified)chapterTitle=prepareContent(chapterTitle,{simplified:true});
  const paragraphs=String(content||'正文尚未加载').split(/\r?\n+/).filter(x=>x.trim());
  return '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src &apos;none&apos;; img-src data: file:; font-src data: file:; style-src &apos;unsafe-inline&apos;; script-src &apos;unsafe-inline&apos;"><style>'+documentStyles+(fontData?'@font-face{font-family:Imported;src:url('+fontData+')}':'')+'</style></head><body><div id="back"></div><header id="header"></header><div id="viewport"><article id="book"><h1>'+escape(chapterTitle)+'</h1>'+paragraphs.map((line,i)=>'<p data-paragraph="'+i+'">'+escape(line.trim())+'</p>').join('')+'</article></div><div id="fold"></div><footer><span id="left"></span><span id="right"></span></footer><div id="bubble"></div><script>const config='+data+';const imageData='+JSON.stringify(imageData)+';('+readerRuntime.toString()+')();</script></body></html>';
 }
