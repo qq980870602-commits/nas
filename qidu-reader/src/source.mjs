@@ -49,6 +49,15 @@ function rows(ctx, rule) {
   return 'json' in ctx ? values(ctx, rule).flatMap(value=>Array.isArray(value)?value:[value]).map(json => ({json})) : values(ctx, rule, true);
 }
 function absolute(value, base) { if (!value) throw new Error('书源没有解析出链接'); return new URL(value, base).href; }
+export async function bookInfo(source,book) {
+  if(!source)return {...book,wordCount:book.wordCount||String((book.chapters||[]).reduce((n,c)=>n+(c.content?.length||0),0)),originName:'本地导入'};
+  if(isSudugu(source))return suduguClient.bookInfo(source,book);
+  if(isDahuilang(source))return dahuilangClient.bookInfo(source,book);
+  const url=book.url||book.originUrl;if(!url||!source.ruleBookInfo)return book;
+  const ctx=await load(url,source),r=source.ruleBookInfo,details={...book};
+  for(const [key,rule]of Object.entries({title:r.name,author:r.author,intro:r.intro,coverUrl:r.coverUrl,category:r.kind,wordCount:r.wordCount,latestChapter:r.lastChapter}))if(rule){const value=first(ctx,rule);if(value)details[key]=key==='coverUrl'?absolute(value,url):value;}
+  return {...details,infoFetchedAt:Date.now()};
+}
 export async function search(source, keyword) {
   if(isSudugu(source))return suduguClient.search(source,keyword);
   if(isDahuilang(source))return dahuilangClient.search(source,keyword);

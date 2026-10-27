@@ -25,7 +25,7 @@ function mapBooks(items) {
   return items.filter(x=>x&&x.book_id!==undefined&&x.book_name&&(!x.tab||x.tab==='小说')).map(x=>{
     const metadata={book_id:requireId(x.book_id,'书籍 ID'),source:requireId(x.source,'来源平台'),tab:'小说',url:x.toc_url||''};
     let coverUrl='';try{const url=new URL(x.thumb_url);if(url.protocol==='https:'&&!url.username&&!url.password)coverUrl=url.href;}catch{}
-    return {title:String(x.book_name).replace(/（别名：.*?）/g,''),author:String(x.author||''),intro:plainText(String(x.abstract||'')),coverUrl,category:String(x.category||x.tags||''),url:'dahuilang:'+encodeURIComponent(JSON.stringify(metadata)),dahuilang:metadata};
+    return {title:String(x.book_name).replace(/（别名：.*?）/g,''),author:String(x.author||''),intro:plainText(String(x.abstract||'')),coverUrl,category:String(x.category||x.tags||''),wordCount:String(x.word_number??''),status:String(x.status||''),updatedAt:String(x.last_chapter_update_time||''),latestChapter:String(x.last_chapter_title||''),url:'dahuilang:'+encodeURIComponent(JSON.stringify(metadata)),dahuilang:metadata};
   });
 }
 function discoveryAddress(source,input,page=1) {
@@ -67,6 +67,15 @@ export function createDahuilangClient({fetcher=(...args)=>fetch(...args),session
     } finally {clearTimeout(timer);}
   }
   return {
+    async bookInfo(source,book) {
+      let meta=book.dahuilang||book.chapters?.[0]?.dahuilang;
+      if(!meta){const url=book.url||book.originUrl||'';if(url.startsWith('dahuilang:')){try{meta=JSON.parse(decodeURIComponent(url.slice(10)));}catch{}}}
+      if(!meta?.book_id||!meta.source)throw new Error('旧书籍缺少详情标识，请重新搜索这本书');
+      const result=await request(source,'/detail',{method:'POST',allowAnonymous:true,query:{book_id:meta.book_id,source:meta.source,tab:'小说',variable:JSON.stringify({custom:''})},body:{html:''},form:true});
+      if(!result.data||Array.isArray(result.data)||typeof result.data!=='object')throw new Error('书籍详情响应不完整');
+      const parsed=mapBooks([{...result.data,book_id:result.data.book_id??meta.book_id,book_name:result.data.book_name||book.title,source:result.data.source||meta.source}])[0];
+      if(!parsed)throw new Error('书籍详情缺少名称或来源');return {...book,...parsed,infoFetchedAt:Date.now()};
+    },
     async login(source,email,password,deviceId) {
       if(!email.trim()||!password||!deviceId)throw new Error('请填写邮箱和密码');
       const result=await request(source,'/login_api',{method:'POST',publicRequest:true,body:{register_email:email.trim(),password}});

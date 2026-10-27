@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, AppState, ImageBackground, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, AppState, useColorScheme, ImageBackground, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import * as Picker from 'expo-document-picker';
 import * as FS from 'expo-file-system/legacy';
 import * as Font from 'expo-font';
@@ -7,12 +7,17 @@ import { StatusBar } from 'expo-status-bar';
 import * as Speech from 'expo-speech';
 import * as Sharing from 'expo-sharing';
 import Home from './src/Home.jsx';
-import { GlassProvider, GlassSurface } from './src/Glass.jsx';
+import BookDetails from './src/BookDetails.jsx';
+import { metadataPatch } from './src/book-metadata.mjs';
+import { GlassProvider, AppearanceProvider, GlassSurface } from './src/Glass.jsx';
+import {appearanceDefaults,themeFile,parseTheme} from './src/appearance.mjs';
+import {splitWithRules,validateTocRule} from './src/toc-rules.mjs';
+import {ReaderSettings,Choice} from './src/Customize.jsx';
 import { recordTime } from './src/stats.mjs';
 import DahuilangAccount, { readDahuilangSession } from './src/DahuilangAccount.jsx';
 import { configureDahuilangSessionProvider } from './src/dahuilang.mjs';
 import { importSources, splitChapters } from './src/rules.mjs';
-import { search, catalog, chapterText } from './src/source.mjs';
+import { search, catalog, chapterText, bookInfo } from './src/source.mjs';
 import { downloadSourceText } from './src/source-import.mjs';
 const LIBRARY = FS.documentDirectory + 'qidu-library.json';
 if (Platform.OS !== 'web') configureDahuilangSessionProvider(readDahuilangSession);
@@ -21,6 +26,9 @@ const initial = {
   sources: [],
   stats: {},
   settings: {
+    ...appearanceDefaults,
+    fonts: [],
+    tocRules: [],
     prefetch: 5,
     speechRate: 1,
     appImage: null,
@@ -49,6 +57,10 @@ function ReaderApp() {
   const [data, setData] = useState(initial),
     [ready, setReady] = useState(false),
     [tab, setTab] = useState('书架');
+  const systemScheme=useColorScheme();
+  const [voices,setVoices]=useState([]);
+  useEffect(()=>{Speech.getAvailableVoicesAsync().then(items=>setVoices(items.filter(x=>/^zh|^cmn|^yue/i.test(x.language)))).catch(()=>{});},[]);
+  const [detailTarget, setDetailTarget] = useState(null);
   const [bookId, setBookId] = useState(null),
     [panel, setPanel] = useState(null),
     [busy, setBusy] = useState(false);
@@ -67,6 +79,7 @@ function ReaderApp() {
     saveAllowed = useRef(true);
   const book = data.books.find(b => b.id === bookId),
     settings = data.settings,
+    readerColors=settings.followSystem?(systemScheme==='dark'?{background:settings.darkBackground,ink:settings.darkInk}:{background:settings.lightBackground,ink:settings.lightInk}):settings,
     chapter = book?.chapters[book.index];
   const source = data.sources.find(x => x.bookSourceUrl === sourceId);
   const updateSettings = value => setData(d => ({
@@ -106,7 +119,8 @@ function ReaderApp() {
             ...parsed,
             settings: {
               ...initial.settings,
-              ...parsed.settings
+              ...parsed.settings,
+              fonts:parsed.settings?.fonts|| (parsed.settings?.font?[parsed.settings.font]:[])
             }
           });
         }
@@ -161,7 +175,7 @@ function ReaderApp() {
     };
   }, [bookId, book?.index]);
   useEffect(() => {
-    if (!ready || !bookId || panel && !speaking) return;
+    if (!ready || !bookId || (panel||detailTarget) && !speaking) return;
     let start = Date.now(),
       active = AppState.currentState === 'active';
     const flush = () => {
@@ -188,7 +202,7 @@ function ReaderApp() {
       sub.remove();
       flush();
     };
-  }, [ready, bookId, panel, speaking]);
+  }, [ready, bookId, panel, detailTarget, speaking]);
   const toggleSpeech = () => {
     if (speaking) {
       speechToken.current++;
@@ -212,6 +226,8 @@ function ReaderApp() {
       Speech.speak(chunks[index], {
         language: 'zh-CN',
         rate: settings.speechRate || 1,
+        pitch: settings.speechPitch||1,
+        voice: settings.voice||undefined,
         onDone: () => speakChunk(index + 1),
         onError: e => {
           setSpeaking(false);
@@ -238,6 +254,7 @@ function ReaderApp() {
         settings: {
           ...settings,
           font: null,
+          fonts: [],
           image: null,
           appImage: null
         }
@@ -258,6 +275,7 @@ function ReaderApp() {
     const backup = JSON.parse(await FS.readAsStringAsync(result.assets[0].uri));
     const saved = backup.data;
     if (backup.format !== 'qidu-backup' || backup.version !== 1 || !saved || !Array.isArray(saved.books) || !Array.isArray(saved.sources)) throw new Error('不是有效的栖读备份文件');
+    if(saved.settings?.tocRules){if(!Array.isArray(saved.settings.tocRules))throw Error('目录规则格式错误');for(const rule of saved.settings.tocRules)validateTocRule(rule.pattern);}
     if (saved.books.some(b => typeof b.id !== 'string' || typeof b.title !== 'string' || !Array.isArray(b.chapters) || !b.chapters.length || !Number.isInteger(b.index) || b.index < 0 || b.index >= b.chapters.length || b.chapters.some(c => typeof c.title !== 'string' || c.content !== undefined && typeof c.content !== 'string'))) throw new Error('备份书籍数据不完整');
     const sources = saved.sources.length ? importSources(JSON.stringify(saved.sources)) : [];
     const candidate = {
@@ -268,6 +286,7 @@ function ReaderApp() {
         ...initial.settings,
         ...saved.settings,
         font: null,
+        fonts: [],
         image: null,
         appImage: null
       }
@@ -334,7 +353,7 @@ function ReaderApp() {
       const b = {
         id,
         title: asset.name.replace(/\.txt$/i, ''),
-        chapters: splitChapters(text),
+        chapters: splitWithRules(text,settings.tocRules||[]),
         index: 0,
         progress: 0
       };
@@ -352,12 +371,7 @@ function ReaderApp() {
         from: asset.uri,
         to: uri
       });
-      updateSettings(kind === 'font' ? {
-        font: {
-          name: 'UserFont' + Date.now(),
-          uri
-        }
-      } : kind === 'appImage' ? {
+      updateSettings(kind === 'font' ? (()=>{const font={name:'UserFont'+Date.now(),label:asset.name,uri};return {font,fonts:[...(settings.fonts||[]),font]};})() : kind === 'appImage' ? {
         appImage: uri
       } : {
         image: uri
@@ -404,150 +418,139 @@ function ReaderApp() {
     });
     setPanel(null);
   });
-  const addOnline = (item, selectedSource = source) => run(async () => {
+  const addOnline = (item, selectedSource = source, readNow = true) => run(async () => {
     if (!selectedSource) throw new Error('请先选择书源');
     const existing = data.books.find(b => b.originUrl === item.url && b.source?.bookSourceUrl === selectedSource.bookSourceUrl);
-    if (existing) {openBook(existing);return;}
-    const chapters = await catalog(selectedSource, item);
+    if (existing) {
+      if (readNow) openBook(existing);else Alert.alert('已在书架', existing.title);
+      return;
+    }
+    let info = item;
+    if (!item.infoFetchedAt || Date.now() - item.infoFetchedAt > 300000) {
+      try {
+        info = await bookInfo(selectedSource, item);
+      } catch {}
+    }
+    const chapters = await catalog(selectedSource, info);
     const b = {
+      ...metadataPatch(info),
       id: String(Date.now()),
-      title: item.title,
-      author: item.author,
+      title: info.title,
+      author: info.author,
       source: selectedSource,
       originUrl: item.url,
       chapters,
       index: 0,
       progress: 0
     };
-    const content = await chapterText(selectedSource, chapters[0]);
-    b.chapters[0].content = content;
+    if (readNow) b.chapters[0].content = await chapterText(selectedSource, chapters[0]);
     setData(d => ({
       ...d,
       books: [b, ...d.books]
     }));
-    setBookId(b.id);
+    if (readNow) setBookId(b.id);else Alert.alert('已加入书架', b.title);
   });
-  const settingView = <GlassSurface style={[s.section, {
-    backgroundColor: '#F5F6EE',
-    borderRadius: 20
-  }]}><Text style={s.heading}>把阅读调成喜欢的样子</Text><Text style={s.label}>阅读背景</Text><View style={s.row}>{palettes.map(([name, background, ink]) => <Button key={name} active={settings.background === background && !settings.image} onPress={() => updateSettings({
-        background,
-        ink,
-        image: null
-      })}>{name}</Button>)}</View><View style={s.row}><Button onPress={() => run(() => pick('image'))}>导入背景图片</Button><Button onPress={() => updateSettings({
-        image: null
-      })}>移除图片</Button></View><Text style={s.label}>字体</Text><View style={s.row}><Button active={!settings.font} onPress={() => updateSettings({
-        font: null
-      })}>系统字体</Button><Button active={!!settings.font} onPress={() => run(() => pick('font'))}>导入 TTF / OTF</Button></View><Text style={s.label}>字号 · {settings.size}</Text><View style={s.row}><Button onPress={() => updateSettings({
-        size: Math.max(14, settings.size - 1)
-      })}>A −</Button><Button onPress={() => updateSettings({
-        size: Math.min(36, settings.size + 1)
-      })}>A ＋</Button></View><Text style={s.label}>行距 · {settings.spacing.toFixed(2)}</Text><View style={s.row}><Button onPress={() => updateSettings({
-        spacing: Math.max(1.2, settings.spacing - .1)
-      })}>紧凑</Button><Button onPress={() => updateSettings({
-        spacing: Math.min(2.6, settings.spacing + .1)
-      })}>宽松</Button></View><View style={{
-      backgroundColor: settings.background,
-      padding: 20,
-      borderRadius: 16,
-      marginTop: 18
-    }}><Text style={{
-        color: settings.ink,
-        fontSize: settings.size,
-        lineHeight: settings.size * settings.spacing,
-        fontFamily: fontReady ?? undefined
-      }}>风翻过书页，时间慢了下来。{'\n'}在文字里，找到自己的片刻宁静。</Text></View></GlassSurface>;
-  if (!ready) return <SafeAreaView style={s.root}><Text style={s.subtitle}>正在打开书架…</Text></SafeAreaView>;
-  if (book) return <SafeAreaView style={[s.root, {
-    backgroundColor: settings.background
-  }]}><StatusBar style={settings.background === '#202623' ? 'light' : 'dark'} /><GlassSurface style={s.readerToolbar} prominent><Button onPress={() => setBookId(null)}>‹ 书架</Button><Button onPress={() => setPanel('目录')}>目录</Button><Button onPress={toggleSpeech}>{speaking ? '停止' : '朗读'}</Button><Button onPress={() => setPanel('排版')}>Aa 排版</Button></GlassSurface><ImageBackground source={settings.image ? {
-      uri: settings.image
-    } : undefined} style={{
-      flex: 1
-    }} imageStyle={{
-      opacity: .3
-    }}><ScrollView key={book.id + ':' + book.index} ref={reader} contentContainerStyle={{
-        padding: 26,
-        paddingBottom: 70
-      }} onContentSizeChange={(w, h) => {
-        if (restore.current) {
-          reader.current?.scrollTo({
-            y: (book.progress || 0) * h,
-            animated: false
+  const exportTheme=()=>run(async()=>{if(!(await Sharing.isAvailableAsync()))throw Error('此设备不支持分享');const uri=FS.cacheDirectory+'qidu-theme-'+Date.now()+'.json';await FS.writeAsStringAsync(uri,JSON.stringify(themeFile(settings),null,2));await Sharing.shareAsync(uri,{mimeType:'application/json',UTI:'public.json'});});
+  const importTheme=()=>run(async()=>{const result=await Picker.getDocumentAsync({type:'*/*',copyToCacheDirectory:true});if(result.canceled)return;const asset=result.assets[0];if(asset.size>256*1024)throw Error('主题文件不能超过 256KB');updateSettings(parseTheme(await FS.readAsStringAsync(asset.uri)));Alert.alert('主题已导入');});
+  const fontPanel=<View style={{gap:12}}><Text style={s.label}>字体管理 · {(settings.fonts||[]).length} 个自定义字体</Text><Choice items={[[null,'系统字体'],...(settings.fonts||[]).map(f=>[f.name,f.label||f.name])]} value={settings.font?.name||null} onChange={name=>updateSettings({font:(settings.fonts||[]).find(f=>f.name===name)||null})}/><Choice items={[[1,'＋ 导入 TTF / OTF']]} onChange={()=>run(()=>pick('font'))}/>{(settings.fonts||[]).map(f=><View key={f.name} style={{flexDirection:'row',alignItems:'center',gap:10}}><Text style={{flex:1,color:'#45665F'}}>{f.label||f.name}</Text><Button onPress={()=>updateSettings({fonts:(settings.fonts||[]).filter(x=>x.name!==f.name),...(settings.font?.name===f.name?{font:null}:{})})}>移除</Button></View>)}<Text style={{color:'#688077',fontSize:12}}>移除只取消字体列表引用，不影响书架。</Text></View>;
+  const settingView=<ReaderSettings settings={settings} update={updateSettings} pickImage={kind=>run(()=>pick(kind))} fontReady={fontReady} fontPanel={fontPanel} voices={voices} speaking={speaking}/>;
+  const detailSheet = <Modal visible={!!detailTarget} transparent presentationStyle="overFullScreen" animationType="slide" onRequestClose={() => setDetailTarget(null)}><SafeAreaView style={[s.root, {
+      backgroundColor: '#E5F0EC'
+    }]}><GlassSurface style={s.readerToolbar} prominent><Text style={s.heading}>作品详情</Text><Button onPress={() => setDetailTarget(null)}>完成</Button></GlassSurface><ScrollView contentContainerStyle={{
+        padding: 20
+      }}>{detailTarget && <BookDetails book={detailTarget} source={detailTarget.source} busy={busy} onFetched={info => updateBook(detailTarget.id, metadataPatch(info))} onRead={info => {
+          setDetailTarget(null);
+          openBook({
+            ...detailTarget,
+            ...info
           });
-          restore.current = false;
-        }
-      }} scrollEventThrottle={250} onScroll={e => {
-        const n = Date.now();
-        if (n - lastSave.current > 500) {
-          lastSave.current = n;
-          updateBook(book.id, {
-            progress: e.nativeEvent.contentOffset.y / Math.max(1, e.nativeEvent.contentSize.height)
-          });
-        }
-      }}><Text style={{
-          fontSize: 14,
-          color: settings.ink,
-          opacity: .55,
-          marginBottom: 28
-        }}>{book.title} · {book.index + 1}/{book.chapters.length}</Text><Text style={{
-          fontSize: 26,
-          color: settings.ink,
-          fontWeight: '600',
-          marginBottom: 26
-        }}>{chapter.title}</Text><Text selectable style={{
-          color: settings.ink,
-          fontFamily: fontReady ?? undefined,
-          fontSize: settings.size,
-          lineHeight: settings.size * settings.spacing
-        }}>{chapter.content || '正文尚未加载，请重新进入本书重试。'}</Text></ScrollView></ImageBackground><GlassSurface style={s.readerToolbar} prominent><Button disabled={busy || book.index === 0} onPress={() => goChapter(book.index - 1)}>上一章</Button><Button onPress={toggleBookmark}>{(book.bookmarks || []).includes(book.index) ? '已加书签' : '＋ 书签'}</Button><Button disabled={busy || book.index === book.chapters.length - 1} onPress={() => goChapter(book.index + 1)}>下一章</Button></GlassSurface><Modal visible={!!panel} animationType="slide" onRequestClose={() => setPanel(null)}><SafeAreaView style={s.root}><GlassSurface style={s.readerToolbar} prominent><Text style={s.heading}>{panel}</Text><Button onPress={() => setPanel(null)}>完成</Button></GlassSurface><ScrollView>{panel === '排版' ? settingView : book.chapters.map((c, i) => <TouchableOpacity disabled={busy} key={i} style={s.catalog} onPress={() => goChapter(i)}><Text style={{
-              color: i === book.index ? '#426B56' : '#333'
-            }}>{c.title}</Text></TouchableOpacity>)}</ScrollView></SafeAreaView></Modal></SafeAreaView>;
-  return <Home data={data} tab={tab} setTab={setTab} busy={busy} openBook={openBook} removeBook={b => Alert.alert('移除书籍', b.title, [{
-    text: '取消'
-  }, {
-    text: '移除',
-    style: 'destructive',
-    onPress: () => setData(d => ({
+        }} />}</ScrollView></SafeAreaView></Modal>;
+  if (!ready) return <><SafeAreaView style={s.root}><Text style={s.subtitle}>正在打开书架…</Text></SafeAreaView>{detailSheet}</>;
+  if (book) return <AppearanceProvider settings={{...settings,uiFontFamily:fontReady}}><SafeAreaView style={[s.root, {
+      backgroundColor: readerColors.background
+    }]}><StatusBar hidden={settings.showStatusBar===false} style={systemScheme==='dark'&&settings.followSystem||['#202623','#1D2237','#1C3027'].includes(readerColors.background)?'light':'dark'} /><GlassSurface style={s.readerToolbar} prominent><Button onPress={() => setBookId(null)}>‹ 书架</Button><Button onPress={() => setDetailTarget(book)}>详情</Button><Button onPress={() => setPanel('目录')}>目录</Button><Button onPress={toggleSpeech}>{speaking ? '停止' : '朗读'}</Button><Button onPress={() => setPanel('排版')}>Aa</Button></GlassSurface><ImageBackground source={settings.image ? {
+        uri: settings.image
+      } : undefined} style={{
+        flex: 1
+      }} imageStyle={{
+        opacity: (settings.imageOpacity??30)/100
+      }}><ScrollView key={book.id + ':' + book.index} ref={reader} contentContainerStyle={{
+          paddingLeft:settings.marginLeft??26,paddingRight:settings.marginRight??26,paddingTop:settings.marginTop??26,
+          paddingBottom: settings.marginBottom??70
+        }} onContentSizeChange={(w, h) => {
+          if (restore.current) {
+            reader.current?.scrollTo({
+              y: (book.progress || 0) * h,
+              animated: false
+            });
+            restore.current = false;
+          }
+        }} scrollEventThrottle={250} onScroll={e => {
+          const n = Date.now();
+          if (n - lastSave.current > 500) {
+            lastSave.current = n;
+            updateBook(book.id, {
+              progress: e.nativeEvent.contentOffset.y / Math.max(1, e.nativeEvent.contentSize.height)
+            });
+          }
+        }}><Text style={{
+            fontSize: 14,
+            color: readerColors.ink,
+            opacity: .55,
+            marginBottom: 28
+          }}>{book.title} · {book.index + 1}/{book.chapters.length}</Text><Text style={{
+            fontSize: 26,
+            color: settings.ink,
+            fontWeight: '600',
+            marginBottom: 26
+          }}>{chapter.title}</Text><View>{(chapter.content||'正文尚未加载，请重新进入本书重试。').split(/\n+/).filter(line=>line.trim()).map((line,i)=><Text key={i} selectable style={{color:readerColors.ink,fontFamily:fontReady??undefined,fontSize:settings.size,lineHeight:settings.size*settings.spacing,fontWeight:settings.fontWeight||'400',letterSpacing:settings.letterSpacing||0,textAlign:settings.textAlign||'left',textDecorationLine:settings.underline?'underline':'none',marginBottom:settings.paragraphGap??12}}>{'　'.repeat(settings.indent??2)+line.trim()}</Text>)}</View></ScrollView></ImageBackground><GlassSurface style={s.readerToolbar} prominent><Button disabled={busy || book.index === 0} onPress={() => goChapter(book.index - 1)}>上一章</Button><Button onPress={toggleBookmark}>{(book.bookmarks || []).includes(book.index) ? '已加书签' : '＋ 书签'}</Button><Button disabled={busy || book.index === book.chapters.length - 1} onPress={() => goChapter(book.index + 1)}>下一章</Button></GlassSurface><Modal visible={!!panel} animationType="slide" onRequestClose={() => setPanel(null)}><SafeAreaView style={s.root}><GlassSurface style={s.readerToolbar} prominent><Text style={s.heading}>{panel}</Text><Button onPress={() => setPanel(null)}>完成</Button></GlassSurface><ScrollView>{panel === '排版' ? settingView : book.chapters.map((c, i) => <TouchableOpacity disabled={busy} key={i} style={s.catalog} onPress={() => goChapter(i)}><Text style={{
+                color: i === book.index ? '#426B56' : '#333'
+              }}>{c.title}</Text></TouchableOpacity>)}</ScrollView></SafeAreaView></Modal></SafeAreaView>{detailSheet}</AppearanceProvider>;
+  return <AppearanceProvider settings={{...settings,uiFontFamily:fontReady}}><Home fontPanel={fontPanel} fontReady={fontReady} onExportTheme={exportTheme} onImportTheme={importTheme} pickImage={kind=>run(()=>pick(kind))} data={data} tab={tab} setTab={setTab} busy={busy} onBookDetails={setDetailTarget} openBook={openBook} removeBook={b => Alert.alert('移除书籍', b.title, [{
+      text: '取消'
+    }, {
+      text: '移除',
+      style: 'destructive',
+      onPress: () => setData(d => ({
+        ...d,
+        books: d.books.filter(x => x.id !== b.id)
+      }))
+    }])} importBook={() => run(() => pick('book'))} sourceId={sourceId} setSourceId={setSourceId} keyword={keyword} setKeyword={setKeyword} results={results} setResults={setResults} sourceText={sourceText} setSourceText={setSourceText} sourceUrl={sourceUrl} setSourceUrl={setSourceUrl} importLink={() => run(async () => addSources(await downloadSourceText(sourceUrl)))} importFile={() => run(() => pick('source'))} importText={() => run(async () => addSources(sourceText))} doSearch={() => run(async () => {
+      setResults([]);
+      const found = await search(source, keyword.trim());
+      setResults(found);
+      if (!found.length) Alert.alert('没有搜索结果', '请检查关键词或书源规则。');
+    })} addOnline={addOnline} deleteSource={x => {
+      setData(d => ({
+        ...d,
+        sources: d.sources.filter(y => y.bookSourceUrl !== x.bookSourceUrl)
+      }));
+      setSourceId(null);
+      setResults([]);
+    }} appearance={settingView} updateSettings={updateSettings} pickAppImage={() => run(() => pick('appImage'))} accountPanel={selected => <DahuilangAccount source={selected} onConfig={config => setData(d => ({
       ...d,
-      books: d.books.filter(x => x.id !== b.id)
-    }))
-  }])} importBook={() => run(() => pick('book'))} sourceId={sourceId} setSourceId={setSourceId} keyword={keyword} setKeyword={setKeyword} results={results} setResults={setResults} sourceText={sourceText} setSourceText={setSourceText} sourceUrl={sourceUrl} setSourceUrl={setSourceUrl} importLink={() => run(async () => addSources(await downloadSourceText(sourceUrl)))} importFile={() => run(() => pick('source'))} importText={() => run(async () => addSources(sourceText))} doSearch={() => run(async () => {
-    setResults([]);
-    const found = await search(source, keyword.trim());
-    setResults(found);
-    if (!found.length) Alert.alert('没有搜索结果', '请检查关键词或书源规则。');
-  })} addOnline={addOnline} deleteSource={x => {
-    setData(d => ({
-      ...d,
-      sources: d.sources.filter(y => y.bookSourceUrl !== x.bookSourceUrl)
-    }));
-    setSourceId(null);
-    setResults([]);
-  }} appearance={settingView} updateSettings={updateSettings} pickAppImage={() => run(() => pick('appImage'))} accountPanel={selected => <DahuilangAccount source={selected} onConfig={config => setData(d => ({
-    ...d,
-    sources: d.sources.map(s => s.bookSourceUrl === selected.bookSourceUrl ? {
-      ...s,
-      dahuilang: config
-    } : s),
-    books: d.books.map(b => b.source?.bookSourceUrl === selected.bookSourceUrl ? {
-      ...b,
-      source: {
-        ...b.source,
+      sources: d.sources.map(s => s.bookSourceUrl === selected.bookSourceUrl ? {
+        ...s,
         dahuilang: config
-      }
-    } : b)
-  }))} />} onSpeakRate={rate => updateSettings({
-    speechRate: rate
-  })} onPrefetch={prefetchBook} onClearCache={clearCache} onBackup={exportBackup} onRestore={restoreBackup} onBookmark={(b, index) => {
-    updateBook(b.id, {
-      index,
-      progress: 0,
-      lastRead: Date.now()
-    });
-    setBookId(b.id);
-    if (b.source && !b.chapters[index].content) run(() => loadChapter(b, index));
-  }} />;
+      } : s),
+      books: d.books.map(b => b.source?.bookSourceUrl === selected.bookSourceUrl ? {
+        ...b,
+        source: {
+          ...b.source,
+          dahuilang: config
+        }
+      } : b)
+    }))} />} onSpeakRate={rate => updateSettings({
+      speechRate: rate
+    })} onPrefetch={prefetchBook} onClearCache={clearCache} onBackup={exportBackup} onRestore={restoreBackup} onBookmark={(b, index) => {
+      updateBook(b.id, {
+        index,
+        progress: 0,
+        lastRead: Date.now()
+      });
+      setBookId(b.id);
+      if (b.source && !b.chapters[index].content) run(() => loadChapter(b, index));
+    }} />{detailSheet}</AppearanceProvider>;
 }
 const s = StyleSheet.create({
   root: {
@@ -580,7 +583,7 @@ const s = StyleSheet.create({
     color: '#263B30'
   },
   button: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 11,
     backgroundColor: '#EBF0E9',
     borderRadius: 22,
@@ -731,4 +734,6 @@ const s = StyleSheet.create({
     borderColor: '#E6EBE1'
   }
 });
-export default function App(){return <GlassProvider><ReaderApp/></GlassProvider>;}
+export default function App() {
+  return <GlassProvider><ReaderApp /></GlassProvider>;
+}

@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Modal, SafeAreaView, ImageBackground } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Modal, SafeAreaView, Image, ImageBackground } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { dayKey, recentDays, streak } from './stats.mjs';
 import { isDahuilang } from './dahuilang.mjs';
 import {isSudugu} from './source-types.mjs';
 import Discover from './Discover.jsx';
+import {AppearanceSettings,TocSettings} from './Customize.jsx';
+import {appearanceDefaults} from './appearance.mjs';
+import BookDetails from './BookDetails.jsx';
 import { GlassSurface, GlassInput, GlassTabs, GlassMaterial } from './Glass.jsx';
 const green = '#2A6A60';
 const duration = seconds => seconds > 0 && seconds < 60 ? `${Math.floor(seconds)}秒` : seconds >= 3600 ? `${Math.floor(seconds / 3600)}时${Math.floor(seconds % 3600 / 60)}分` : `${Math.floor(seconds / 60)}分钟`;
@@ -51,7 +54,7 @@ function Statistics({
     },
     week = recentDays(stats),
     total = week.reduce((n, d) => n + d.read + d.listen, 0);
-  return <><GlassSurface style={u.statsCard}><View style={u.ring}><Text style={u.total}>{duration(today.read + today.listen)}</Text><Text style={u.secondary}>今日合计</Text></View><View style={u.blueLine} /><Text style={[u.secondary, {
+  return <><GlassSurface contentCard style={u.statsCard}><View style={u.ring}><Text style={u.total}>{duration(today.read + today.listen)}</Text><Text style={u.secondary}>今日合计</Text></View><View style={u.blueLine} /><Text style={[u.secondary, {
         textAlign: 'center',
         marginVertical: 16
       }]}>● 阅读 {duration(today.read)}　● 听书 {duration(today.listen)}</Text><View style={u.metrics}>{[['▤', duration(today.read), '阅读'], ['♬', duration(today.listen), '听书'], ['♨', `${streak(stats)}天`, '连续']].map(([icon, value, label]) => <View key={label} style={{
@@ -60,7 +63,7 @@ function Statistics({
         }}><Text style={{
             color: green,
             fontSize: 26
-          }}>{icon}</Text><Text style={u.metric}>{value}</Text><Text style={u.secondary}>{label}</Text></View>)}</View></GlassSurface><GlassSurface style={u.statsCard}><Text style={u.cardHeading}>最近 7 天</Text><Bars days={week} /><Text style={u.total}>{duration(total)}</Text><Text style={u.secondary}>总时长　·　{week.filter(d => d.read + d.listen > 0).length} 个活跃日</Text></GlassSurface><GlassSurface style={u.statsCard}><Text style={u.cardHeading}>▥ 近 30 日</Text><Bars days={recentDays(stats, 30)} /><Text style={u.secondary}>只统计前台打开阅读器的时间，朗读单独计时。</Text></GlassSurface></>;
+          }}>{icon}</Text><Text style={u.metric}>{value}</Text><Text style={u.secondary}>{label}</Text></View>)}</View></GlassSurface><GlassSurface contentCard style={u.statsCard}><Text style={u.cardHeading}>最近 7 天</Text><Bars days={week} /><Text style={u.total}>{duration(total)}</Text><Text style={u.secondary}>总时长　·　{week.filter(d => d.read + d.listen > 0).length} 个活跃日</Text></GlassSurface><GlassSurface contentCard style={u.statsCard}><Text style={u.cardHeading}>▥ 近 30 日</Text><Bars days={recentDays(stats, 30)} /><Text style={u.secondary}>只统计前台打开阅读器的时间，朗读单独计时。</Text></GlassSurface></>;
 }
 export default function Home(p) {
   const {
@@ -95,10 +98,12 @@ export default function Home(p) {
     onRestore,
     onBookmark
   } = p;
+  const [onlineDetails,setOnlineDetails]=useState(null);
   const [query, setQuery] = useState(''),
     [siteQuery, setSiteQuery] = useState(''),
     [sheet, setSheet] = useState(null),
     [selectedGroup, setSelectedGroup] = useState('全部');
+  const appAppearance={...appearanceDefaults,...data.settings};
   const source = data.sources.find(x => x.bookSourceUrl === sourceId);
   const groups = ['全部', ...new Set(data.sources.map(x => x.bookSourceGroup || '未分组'))];
   const cacheCount = data.books.filter(b => b.source).reduce((n, b) => n + b.chapters.filter(c => c.content).length, 0);
@@ -109,33 +114,33 @@ export default function Home(p) {
     uri: data.settings.appImage
   } : undefined} style={{
     flex: 1,
-    backgroundColor: '#E8F1F1'
+    backgroundColor: appAppearance.appBackground
   }} imageStyle={{
     opacity: 1
-  }}><StatusBar style="dark" /><LinearGradient colors={['#F7FAFA99', '#E4F4E166', '#CAE5ED88']} style={StyleSheet.absoluteFill} /><View pointerEvents="none" style={u.decoration}><LinearGradient colors={['#95D8BE88', '#BDDEE100']} style={u.orbOne} /><LinearGradient colors={['#9EC8EB88', '#DBE6F000']} style={u.orbTwo} /><LinearGradient colors={['#F1DDAD88', '#EFF0DD00']} style={u.orbThree} /></View><SafeAreaView style={{
+  }}><StatusBar style="dark" /><LinearGradient colors={['#FFFFFF66', '#FFFFFF11', '#FFFFFF22']} style={StyleSheet.absoluteFill} /><View pointerEvents="none" style={[u.decoration,{opacity:appAppearance.glow/100}]}><LinearGradient colors={['#95D8BE88', '#BDDEE100']} style={u.orbOne} /><LinearGradient colors={['#9EC8EB88', '#DBE6F000']} style={u.orbTwo} /><LinearGradient colors={['#F1DDAD88', '#EFF0DD00']} style={u.orbThree} /></View><SafeAreaView style={{
       flex: 1
-    }}><ScrollView contentContainerStyle={u.page}><View style={u.header}><Text style={u.title}>{tab === '书架' ? '全部' : tab}</Text><View style={{
+    }}><ScrollView contentContainerStyle={u.page}><View style={u.header}><Text style={[u.title,{color:appAppearance.accent},appAppearance.uiFont&&{fontFamily:p.fontReady||undefined}]}>{tab === '书架' ? '全部' : tab}</Text><View style={{
             flexDirection: 'row',
             gap: 10
-          }}>{tab === '书架' && <Action disabled={busy} onPress={importBook}>＋ 导入</Action>}{tab === '书源' && <Action onPress={() => setSheet('导入')}>＋</Action>}{tab === '设置' && <Text style={u.version}>栖读 0.7</Text>}</View></View>{busy && <GlassSurface style={u.notice}><Text style={{
+          }}>{tab === '书架' && <Action disabled={busy} onPress={importBook}>＋ 导入</Action>}{tab === '书源' && <Action onPress={() => setSheet('导入')}>＋</Action>}{tab === '设置' && <Text style={u.version}>栖读 0.8</Text>}</View></View>{busy && <GlassSurface style={u.notice}><Text style={{
             color: green
           }}>正在处理，请稍候…</Text></GlassSurface>}
-  {tab === '书架' && <><GlassInput value={query} onChangeText={setQuery} placeholder="⌕ 搜索书名或作者" placeholderTextColor="#697E81" style={u.search} />{data.books.length === 0 && <GlassSurface style={u.statsCard}><Text style={u.cardHeading}>你的随身书房</Text><Text style={u.secondary}>导入一本书，或选择书源搜索。{'\n'}背景与字体，都可以换成喜欢的样子。</Text><View style={u.chips}><Action onPress={importBook}>导入 TXT</Action><Action onPress={() => setTab('书源')}>选择书源</Action></View></GlassSurface>}{data.books.filter(b => (b.title + (b.author || '')).toLowerCase().includes(query.toLowerCase())).map((b, i) => {
+  {tab === '书架' && <><GlassInput value={query} onChangeText={setQuery} placeholder="⌕ 搜索书名或作者" placeholderTextColor="#697E81" style={u.search} />{data.books.length === 0 && <GlassSurface contentCard style={u.statsCard}><Text style={u.cardHeading}>你的随身书房</Text><Text style={u.secondary}>导入一本书，或选择书源搜索。{'\n'}背景与字体，都可以换成喜欢的样子。</Text><View style={u.chips}><Action onPress={importBook}>导入 TXT</Action><Action onPress={() => setTab('书源')}>选择书源</Action></View></GlassSurface>}<View style={appAppearance.shelfLayout==='网格'?{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between'}:undefined}>{data.books.filter(b => (b.title + (b.author || '')).toLowerCase().includes(query.toLowerCase())).map((b, i) => {
             const progress = Math.min(100, Math.round((b.index + (b.progress || 0)) / b.chapters.length * 100));
-            return <GlassSurface key={b.id} onPress={() => openBook(b)} onLongPress={() => removeBook(b)} style={u.bookCard}><View style={u.bookBody}><LinearGradient colors={i % 2 ? ['#E9EAD3', '#789957'] : ['#FAFBF1', '#ABC38E']} style={u.cover}><Text style={u.coverMark}>⸙</Text><Text numberOfLines={4} style={u.coverTitle}>{b.title}</Text><Text style={u.coverFooter}>栖 · 读</Text></LinearGradient><View style={{
+            return <GlassSurface key={b.id} onPress={() => openBook(b)} onLongPress={() => removeBook(b)} contentCard style={[u.bookCard,appAppearance.shelfLayout==='网格'?{width:(100/appAppearance.shelfColumns-2)+'%',padding:8}:{minHeight:appAppearance.shelfSize,padding:appAppearance.shelfSize<118?12:20}]}><View style={[u.bookBody,appAppearance.shelfLayout==='网格'&&{flexDirection:'column',gap:8,alignItems:'stretch'}]}>{b.coverUrl?<Image source={{uri:b.coverUrl}} style={[u.cover,appAppearance.shelfLayout==='网格'?{width:'100%',height:Math.max(65,200/appAppearance.shelfColumns)}:{height:Math.max(65,appAppearance.shelfSize-45),width:Math.max(45,(appAppearance.shelfSize-45)*.68)}]}/>:<LinearGradient colors={i % 2 ? ['#E9EAD3', '#789957'] : ['#FAFBF1', '#ABC38E']} style={[u.cover,appAppearance.shelfLayout==='网格'?{width:'100%',height:Math.max(65,200/appAppearance.shelfColumns)}:{height:Math.max(65,appAppearance.shelfSize-45),width:Math.max(45,(appAppearance.shelfSize-45)*.68)}]}><Text style={u.coverMark}>⸙</Text><Text numberOfLines={4} style={u.coverTitle}>{b.title}</Text><Text style={u.coverFooter}>栖 · 读</Text></LinearGradient>}<View style={{
                   flex: 1,
-                  gap: 9
+                  gap: appAppearance.shelfSize<118?3:9
                 }}><View style={{
                     flexDirection: 'row',
                     gap: 8
-                  }}><Text numberOfLines={1} style={[u.bookTitle, {
+                  }}><Text numberOfLines={appAppearance.shelfLayout==='网格'?2:1} style={[u.bookTitle,appAppearance.shelfLayout==='网格'&&{fontSize:14}, {
                       flex: 1
-                    }]}>{b.title}</Text><Text style={u.percent}>{progress}%</Text></View><Text numberOfLines={1} style={u.secondary}>{b.author || '本地藏书'}</Text><Text numberOfLines={1} style={u.chapter}>▣ {b.chapters[b.index]?.title}</Text><View style={u.chips}><Text style={u.badge}>{b.chapters.length} 章</Text><Text style={u.badge}>{b.source ? '网络书籍' : 'TXT'}</Text>{!!b.bookmarks?.length && <Text style={u.badge}>{b.bookmarks.length} 书签</Text>}</View></View></View><View style={u.progress}><LinearGradient colors={['#B4CD98', '#748D61']} style={{
+                    }]}>{b.title}</Text>{appAppearance.shelfLayout!=='网格'&&<Text style={u.percent}>{progress}%</Text>}</View><Text numberOfLines={1} style={u.secondary}>{b.author || '本地藏书'}</Text><Text numberOfLines={1} style={u.chapter}>▣ {b.chapters[b.index]?.title}</Text><TouchableOpacity accessibilityLabel={'查看作品详情：'+b.title} onPress={event=>{event.stopPropagation?.();if(p.onBookDetails)p.onBookDetails(b);else{setOnlineDetails({book:b,source:b.source});setSheet('作品详情');}}}><Text style={{fontSize:12,color:'#2B6E60'}}>作品详情 ›</Text></TouchableOpacity>{appAppearance.showTags&&appAppearance.shelfSize>=118&&appAppearance.shelfLayout!=='网格'&&<View style={u.chips}><Text style={[u.badge,{color:appAppearance.tagMode==='自定义'?appAppearance.tagColor:appAppearance.tagMode==='文字色'?'#203B42':'#4C8A67'}]}>{b.chapters.length} 章</Text><Text style={u.badge}>{b.source ? '网络书籍' : 'TXT'}</Text>{!!b.bookmarks?.length && <Text style={u.badge}>{b.bookmarks.length} 书签</Text>}</View>}</View></View><View style={u.progress}><LinearGradient colors={['#B4CD98', '#748D61']} style={{
                   width: progress + '%',
                   height: 8,
                   borderRadius: 8
                 }} /></View></GlassSurface>;
-          })}</>}
+          })}</View></>}
   {tab === '书源' && <><GlassInput value={siteQuery} onChangeText={setSiteQuery} placeholder="⌕ 搜索站点或配置" placeholderTextColor="#697E81" style={u.search} /><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={u.chips}>{groups.map(g => <Action key={g} onPress={() => setSelectedGroup(g)}>{selectedGroup === g ? '● ' : ''}{g}</Action>)}</ScrollView><Text style={[u.secondary,{marginBottom:12}]}>点书源看推荐，长按搜索与管理</Text><View style={u.grid}>{data.sources.filter(x => (selectedGroup === '全部' || (x.bookSourceGroup || '未分组') === selectedGroup) && (x.bookSourceName + (x.bookSourceGroup || '')).toLowerCase().includes(siteQuery.toLowerCase())).map((x, i) => <GlassSurface key={x.bookSourceUrl} style={u.sourceTile} onPress={() => {
               setSourceId(x.bookSourceUrl);
               setResults([]);
@@ -146,15 +151,15 @@ export default function Home(p) {
                   color: '#fff',
                   fontSize: 27,
                   fontWeight: '700'
-                }}>{x.bookSourceName.includes('大灰狼') ? '🍅' : x.bookSourceName.replace(/[^\u4e00-\u9fa5A-Za-z]/g, '').slice(0, 1) || '源'}</Text></View><Text numberOfLines={2} style={u.tileTitle}>{x.bookSourceName}</Text><Text numberOfLines={1} style={u.secondary}>{x.bookSourceGroup || '通常书源'}</Text></GlassSurface>)}</View>{!data.sources.length && <GlassSurface style={u.statsCard}><Text style={u.cardHeading}>添加你的聚合书源</Text><Text style={u.secondary}>支持链接、JSON 文件和粘贴导入。大灰狼等复杂书源需验证 JS 与登录规则。</Text><Action onPress={() => setSheet('导入')}>＋ 添加书源</Action></GlassSurface>}</>}
+                }}>{x.bookSourceName.includes('大灰狼') ? '🍅' : x.bookSourceName.replace(/[^\u4e00-\u9fa5A-Za-z]/g, '').slice(0, 1) || '源'}</Text></View><Text numberOfLines={2} style={u.tileTitle}>{x.bookSourceName}</Text><Text numberOfLines={1} style={u.secondary}>{x.bookSourceGroup || '通常书源'}</Text></GlassSurface>)}</View>{!data.sources.length && <GlassSurface contentCard style={u.statsCard}><Text style={u.cardHeading}>添加你的聚合书源</Text><Text style={u.secondary}>支持链接、JSON 文件和粘贴导入。大灰狼等复杂书源需验证 JS 与登录规则。</Text><Action onPress={() => setSheet('导入')}>＋ 添加书源</Action></GlassSurface>}</>}
   {tab === '发现' && <Discover selectedSourceId={sourceId} client={p.discoveryClient} sources={data.sources} onAdd={addOnline} onSources={(selected) => {const target=selected?.bookSourceUrl?selected:data.sources.find(item=>isDahuilang(item)||isSudugu(item));if(target){setSourceId(target.bookSourceUrl);setSheet('详情');}else setTab('书源');}} busy={busy}/> }
   {tab === '统计' && <Statistics stats={data.stats || {}} />}
-  {tab === '设置' && <><GlassSurface style={u.settingsCard}><Row icon="▣" title="我的书签" detail={`${bookmarkCount} 个`} onPress={() => setTab('书签')} /><Row icon="▤" title="书源配置" detail={`${data.sources.length} 个`} onPress={() => setTab('书源')} /><Row icon="♬" title="朗读设置" detail={`${data.settings.speechRate || 1} 倍速`} onPress={() => setSheet('朗读设置')} /></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="▣" title="阅读设置" detail="背景 / 字体 / 排版" onPress={() => setSheet('阅读设置')} /><Row icon="Aa" title="字体管理" detail={data.settings.font ? '已导入' : '系统字体'} onPress={() => setSheet('阅读设置')} /><View style={{
+  {tab === '设置' && <><GlassSurface style={u.settingsCard}><Row icon="▣" title="我的书签" detail={`${bookmarkCount} 个`} onPress={() => setTab('书签')} /><Row icon="▤" title="书源配置" detail={`${data.sources.length} 个`} onPress={() => setTab('书源')} /><Row icon="♬" title="朗读设置" detail={`${data.settings.speechRate || 1} 倍速`} onPress={() => setSheet('朗读设置')} /></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="▣" title="阅读设置" detail="背景 / 字体 / 排版" onPress={() => setSheet('阅读设置')} /><Row icon="Aa" title="字体管理" detail={(data.settings.fonts||[]).length+' 个'} onPress={() => setSheet('字体管理')} /><Row icon="☷" title="目录规则" detail={'内置 + '+(data.settings.tocRules||[]).length+' 条'} onPress={() => setSheet('目录规则')} /><View style={{
               padding: 22
             }}><Text style={u.rowTitle}>章节预缓存　{data.settings.prefetch || 0} 章</Text><View style={u.chips}>{[0, 5, 10, 50].map(n => <Action key={n} onPress={() => p.updateSettings({
                   prefetch: n
-                })}>{n} 章</Action>)}</View><Text style={u.secondary}>手动缓存最近阅读的网络书籍，不在后台自动下载。</Text><Action disabled={busy || !data.settings.prefetch} onPress={onPrefetch}>开始缓存</Action></View></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="◉" title="外观主题" detail="自定义背景" onPress={() => setSheet('外观主题')} /><Row icon="▥" title="统计" detail="阅读 / 听书" onPress={() => setTab('统计')} /><Row icon="▧" title="本地书籍" detail={`${data.books.filter(b => !b.source).length} 本`} onPress={importBook} /></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="⇧" title="导出备份" detail="文件分享" onPress={onBackup} /><Row icon="⇩" title="恢复备份" detail="从 JSON 文件" onPress={onRestore} /><Row icon="▱" title="缓存管理" detail={`${cacheCount} 章`} onPress={() => setSheet('缓存管理')} /></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="ⓘ" title="关于栖读" detail="0.7.0" onPress={() => setSheet('关于栖读')} /></GlassSurface></>}
-  {tab === '书签' && <>{!bookmarkCount && <GlassSurface style={u.statsCard}><Text style={u.cardHeading}>收藏读到的片刻</Text><Text style={u.secondary}>在阅读器中点“书签”保存当前章节。</Text></GlassSurface>}{data.books.flatMap(b => (b.bookmarks || []).map(index => <GlassSurface key={b.id + ':' + index} style={u.statsCard} onPress={() => onBookmark(b, index)}><Text style={u.cardHeading}>{b.title}</Text><Text style={u.secondary}>▣ {b.chapters[index]?.title}</Text></GlassSurface>))}</>}
+                })}>{n} 章</Action>)}</View><Text style={u.secondary}>手动缓存最近阅读的网络书籍，不在后台自动下载。</Text><Action disabled={busy || !data.settings.prefetch} onPress={onPrefetch}>开始缓存</Action></View></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="◉" title="外观主题" detail="主题 / 书架 / 卡片 / 效果" onPress={() => setSheet('外观主题')} /><Row icon="▥" title="统计" detail="阅读 / 听书" onPress={() => setTab('统计')} /><Row icon="▧" title="本地书籍" detail={`${data.books.filter(b => !b.source).length} 本`} onPress={importBook} /></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="⇧" title="导出备份" detail="文件分享" onPress={onBackup} /><Row icon="⇩" title="恢复备份" detail="从 JSON 文件" onPress={onRestore} /><Row icon="▱" title="缓存管理" detail={`${cacheCount} 章`} onPress={() => setSheet('缓存管理')} /></GlassSurface><GlassSurface style={u.settingsCard}><Row icon="ⓘ" title="关于栖读" detail="0.8.0" onPress={() => setSheet('关于栖读')} /></GlassSurface></>}
+  {tab === '书签' && <>{!bookmarkCount && <GlassSurface contentCard style={u.statsCard}><Text style={u.cardHeading}>收藏读到的片刻</Text><Text style={u.secondary}>在阅读器中点“书签”保存当前章节。</Text></GlassSurface>}{data.books.flatMap(b => (b.bookmarks || []).map(index => <GlassSurface key={b.id + ':' + index} style={u.statsCard} onPress={() => onBookmark(b, index)}><Text style={u.cardHeading}>{b.title}</Text><Text style={u.secondary}>▣ {b.chapters[index]?.title}</Text></GlassSurface>))}</>}
   </ScrollView><GlassTabs items={['书架', '发现', '书源', '统计', '设置']} value={tab === '书签' ? '书架' : tab} onChange={setTab} style={u.nav} />
   <Modal visible={!!sheet} transparent presentationStyle="overFullScreen" animationType="slide" onRequestClose={close}><SafeAreaView style={{
           flex: 1,
@@ -171,7 +176,7 @@ export default function Home(p) {
   {sheet === '详情' && source && <><Text selectable style={u.secondary}>{source.bookSourceUrl}</Text><Text style={[u.secondary, {
                 color: '#71634A',
                 marginVertical: 16
-              }]}>{isDahuilang(source) ? '已接入 5.9.30 专用小说适配；可浏览搜索，付费正文需在当前线路登录验证。' : isSudugu(source) ? '已接入速读谷专用解析，支持新版域名、目录分页和正文分页。' : source.warnings?.length ? source.warnings.join('；') : '基础规则可尝试，实际可用性需搜索验证'}</Text>{isDahuilang(source) && p.accountPanel(source)}<GlassInput style={u.input} value={keyword} onChangeText={setKeyword} placeholder={isSudugu(source)?'书名、作者或速读谷书籍链接':'搜索书名或作者'} placeholderTextColor="#697E81" /><Action disabled={busy || !keyword.trim()} onPress={doSearch}>{busy ? '正在搜索…' : '搜索'}</Action>{results.map((item, i) => <GlassSurface key={item.url + i} style={u.statsCard}><Text style={u.cardHeading}>{item.title}</Text><Text style={u.secondary}>{item.author}</Text><Action disabled={busy} onPress={() => {
+              }]}>{isDahuilang(source) ? '已接入 5.9.30 专用小说适配；可浏览搜索，付费正文需在当前线路登录验证。' : isSudugu(source) ? '已接入速读谷专用解析，支持新版域名、目录分页和正文分页。' : source.warnings?.length ? source.warnings.join('；') : '基础规则可尝试，实际可用性需搜索验证'}</Text>{isDahuilang(source) && p.accountPanel(source)}<GlassInput style={u.input} value={keyword} onChangeText={setKeyword} placeholder={isSudugu(source)?'书名、作者或速读谷书籍链接':'搜索书名或作者'} placeholderTextColor="#697E81" /><Action disabled={busy || !keyword.trim()} onPress={doSearch}>{busy ? '正在搜索…' : '搜索'}</Action>{results.map((item, i) => <GlassSurface key={item.url + i} style={u.statsCard}><Text style={u.cardHeading}>{item.title}</Text><Text style={u.secondary}>{item.author}</Text><Action onPress={()=>{setOnlineDetails({book:item,source});setSheet('作品详情');}}>作品详情</Action><Action disabled={busy} onPress={() => {
                   close();
                   addOnline(item);
                 }}>加入书架并阅读</Action></GlassSurface>)}<View style={{
@@ -180,16 +185,17 @@ export default function Home(p) {
                 deleteSource(source);
                 close();
               }}>移除此书源</Action></>}
+  {sheet === '作品详情' && onlineDetails && <BookDetails loadInfo={p.discoveryClient?.bookInfo} loadCatalog={p.discoveryClient?.catalog} book={onlineDetails.book} source={onlineDetails.source} busy={busy} onRead={info=>{close();addOnline(info,onlineDetails.source,true);}} onAdd={info=>{close();addOnline(info,onlineDetails.source,false);}}/>}
   {sheet === '阅读设置' && appearance}
   {sheet === '朗读设置' && <><Text style={u.secondary}>使用系统中文语音朗读当前章节，章节结束后停止。iPhone 静音开关可能影响声音。</Text><View style={u.chips}>{[.7, .85, 1, 1.15, 1.3].map(rate => <Action key={rate} onPress={() => onSpeakRate(rate)}>{data.settings.speechRate === rate ? '● ' : ''}{rate} 倍速</Action>)}</View></>}
-  {sheet === '外观主题' && <><Text style={u.secondary}>应用背景与阅读背景独立设置。</Text><View style={u.chips}><Action onPress={p.pickAppImage}>导入应用背景</Action><Action onPress={() => p.updateSettings({
-                  appImage: null
-                })}>恢复浅绿主题</Action></View></>}
+  {sheet==='字体管理'&&p.fontPanel}
+  {sheet==='目录规则'&&<TocSettings rules={data.settings.tocRules||[]} onChange={tocRules=>p.updateSettings({tocRules})}/>}
+  {sheet==='外观主题'&&<AppearanceSettings settings={data.settings} update={p.updateSettings} pickImage={p.pickImage||p.pickAppImage} onExport={p.onExportTheme} onImport={p.onImportTheme}/>}
   {sheet === '缓存管理' && <><Text style={u.secondary}>已有 {cacheCount} 章网络正文缓存。清理时保留每本书当前阅读章节，本地 TXT 与书签会保留。</Text><Action disabled={busy} onPress={() => {
                 onClearCache();
                 close();
               }}>清理其他章节缓存</Action></>}
-  {sheet === '关于栖读' && <><Text style={u.total}>栖读</Text><Text style={u.secondary}>版本 0.7.0 · 安卓 / iOS{'\n'}参考你提供的界面，独立实现。{'\n'}{'\n'}本机保存书架与统计，支持系统朗读和文件备份。大灰狼 5.9.30 已有专用小说适配；云同步和通用 JS 书源运行尚未完成。{'\n'}{'\n'}不提供书籍内容。复杂聚合源的兼容状态以实际验证结果为准。</Text></>}
+  {sheet === '关于栖读' && <><Text style={u.total}>栖读</Text><Text style={u.secondary}>版本 0.8.0 · 安卓 / iOS{'\n'}参考你提供的界面，独立实现。{'\n'}{'\n'}本机保存书架与统计，支持系统朗读和文件备份。大灰狼 5.9.30 已有专用小说适配；云同步和通用 JS 书源运行尚未完成。{'\n'}{'\n'}不提供书籍内容。复杂聚合源的兼容状态以实际验证结果为准。</Text></>}
   </ScrollView></SafeAreaView></Modal></SafeAreaView></ImageBackground>;
 }
 const u=StyleSheet.create({

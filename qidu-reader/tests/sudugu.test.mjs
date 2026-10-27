@@ -31,3 +31,9 @@ test('分页循环、越站链接与页面上限均明确报错',async()=>{
 test('站点 HTTP 500 不误报成解析成功或 JS 问题',async()=>{
  const client=createSuduguClient({fetcher:async()=>new Response('server error',{status:500})});await assert.rejects(()=>client.search(source,'测试'),/搜索服务返回 HTTP 500/);
 });
+test('作品详情读取卡片外简介、字数、状态、更新时间，保留旧书阅读进度',async()=>{
+ const html='<div class="item"><a href="/128/"><img src="https://images.example/cover.jpg"></a><div class="itemtxt"><h1><i>48.8万字</i><a href="/128/">测试书</a></h1><p><span>连载中</span><span>奇幻小说</span></p><p><a>作者：测试作者</a></p><li><a>第八章 最新章节</a></li></div></div><div class="des"><p>第一段简介。</p><p>第二段简介。</p></div><h2 id="dir"><span>更新时间：2026-10-27 08:00</span></h2><div class="dir"><li><a href="/128/1.html">第一章 开始</a></li></div>';
+ const client=createSuduguClient({fetcher:async()=>new Response(html)});
+ const old={id:'saved-book',title:'旧标题',index:24,progress:.42,chapters:[{title:'第一章',url:'https://www.sudugu.org/128/1.html'}]};
+ const info=await client.bookInfo(source,old);assert.equal(info.intro,'第一段简介。\n第二段简介。');assert.equal(info.wordCount,'48.8万字');assert.equal(info.status,'连载中');assert.equal(info.category,'奇幻小说');assert.equal(info.updatedAt,'2026-10-27 08:00');assert.equal(info.firstChapter.title,'第一章 开始');assert.equal(info.index,24);assert.equal(info.progress,.42);assert.equal(info.id,'saved-book');
+});

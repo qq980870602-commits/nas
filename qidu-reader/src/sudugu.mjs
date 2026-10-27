@@ -17,7 +17,9 @@ function books(doc,base) {
     const url=siteUrl(href,base);if(!/^\/\d+\/$/.test(url.pathname))return [];
     const author=selectAll('a,p',item).map(node=>textContent(node).trim()).find(value=>/^作者[：:]/.test(value))||'';
     let coverUrl='';try{const cover=new URL(selectOne('img',item)?.attribs.src,base);if(cover.protocol==='https:')coverUrl=cover.href;}catch{}
-    return [{title:textContent(link).trim(),author:author.replace(/^作者[：:]\s*/,''),url:url.href,coverUrl,intro:text(item,'.des'),originName:'速读谷'}];
+    const tags=selectAll('.itemtxt p span',item).map(node=>textContent(node).trim()).filter(Boolean);
+    const status=tags.find(value=>/连载|完结|完本/.test(value))||'';
+    return [{title:textContent(link).trim(),author:author.replace(/^作者[：:]\s*/,''),url:url.href,coverUrl,intro:text(item,'.des'),wordCount:text(item,'h1 i'),status,category:tags.find(value=>value!==status)||'',latestChapter:text(item,'li a'),originName:'速读谷'}];
   });
 }
 function contentText(node) {
@@ -47,6 +49,15 @@ export function createSuduguClient({fetcher=(...args)=>fetch(...args),timeout=15
     return url.href;
   }
   return {
+    async bookInfo(source,book) {
+      if(!isSudugu(source))throw new Error('不是支持的速读谷书源');
+      let address=book.url||book.originUrl;
+      if(!address&&book.chapters?.[0]?.url){const chapter=siteUrl(book.chapters[0].url);address=chapter.origin+'/'+chapter.pathname.split('/')[1]+'/';}
+      const url=siteUrl(address);if(!/^\/\d+\/$/.test(url.pathname))throw new Error('书籍详情链接不完整');
+      const doc=await load(url.href,'详情'),parsed=books(doc,url.href)[0];if(!parsed)throw new Error('书籍详情页未解析到基本信息');
+      const description=selectOne('.des',doc),first=selectOne('.dir li a',doc);
+      return {...book,...parsed,intro:description?contentText(description):parsed.intro,updatedAt:text(doc,'#dir span').replace(/^更新时间[：:]\s*/,''),firstChapter:first?{title:textContent(first).trim(),url:siteUrl(first.attribs.href,url.href).href}:book.firstChapter,infoFetchedAt:Date.now()};
+    },
     async search(source,keyword) {
       if(!isSudugu(source))throw new Error('不是支持的速读谷书源');
       if(/^https?:\/\//i.test(keyword.trim())){

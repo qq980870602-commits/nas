@@ -64,3 +64,8 @@ test('发现分类过滤脚本及外站，推荐分页后可接目录',async()=>
   const books=await client.discover(source,entries[0],2);assert.equal(books[0].intro,'推荐简介');assert.equal(books[0].coverUrl,'https://cover.example/1.jpg');assert.equal((await client.catalog(source,books[0]))[0].title,'第一章');
   const requests=seen.length;await assert.rejects(()=>client.discover(source,{url:'https://other.example/get_discover?tab=小说'}),/当前线路/);await assert.rejects(()=>client.discover(source,entries[0],0),/页码/);assert.equal(seen.length,requests);
 });
+test('旧书架从原始链接恢复大灰狼详情标识并保留阅读位置',async()=>{
+ const meta={book_id:'12',source:'番茄',tab:'小说',url:''};
+ const client=createDahuilangClient({fetcher:async(url,options)=>{assert.equal(new URL(url).pathname,'/detail');assert.equal(new URL(url).searchParams.get('book_id'),'12');assert.equal(options.method,'POST');return Response.json({code:0,data:{book_id:'12',book_name:'作品名',source:'番茄',author:'作者',abstract:'<p>作品介绍</p>',word_number:4882000,status:'连载中',last_chapter_update_time:'1小时前'}});}});
+ const info=await client.bookInfo(source,{id:'saved',title:'作品名',originUrl:'dahuilang:'+encodeURIComponent(JSON.stringify(meta)),index:7,progress:.3});assert.equal(info.intro,'作品介绍');assert.equal(info.status,'连载中');assert.equal(info.wordCount,'4882000');assert.equal(info.updatedAt,'1小时前');assert.equal(info.index,7);assert.equal(info.progress,.3);
+});
