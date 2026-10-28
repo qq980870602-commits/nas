@@ -396,7 +396,7 @@ function ReaderApp() {
       index: Math.max(0,Math.min(chapters.length-1,startIndex??0)),
       progress: 0
     };
-    if(readNow){let payload;try{payload=await chapterData(selectedSource,chapters[b.index]);}catch(error){if(!isDahuilang(selectedSource))throw error;payload={content:await chapterText(selectedSource,chapters[b.index]),communityReviews:[],communityLoaded:false,communityError:error.message};}Object.assign(b.chapters[b.index],payload);}
+    if(readNow){let payload;try{payload=await chapterData(selectedSource,chapters[b.index]);}catch(error){if(!isDahuilang(selectedSource))throw error;payload={content:await chapterText(selectedSource,chapters[b.index]),communityReviews:[],communityLoaded:false,communityError:error.message};}Object.assign(b.chapters[b.index],payload,{cacheSourceOrigin:selectedSource.dahuilang?.server||''});}
     setData(d => ({
       ...d,
       books: [b, ...d.books]
