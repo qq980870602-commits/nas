@@ -129,7 +129,7 @@ function ReaderApp() {
     const target=dataRef.current.books.find(item=>item.id===bookId);if(!ready||!readingActive||!target?.source)return;
     let active=true;cacheRef.current.ensure(target.id,target.index).then(()=>{if(active)return cacheRef.current.prefetch(target.id,target.index,settings.prefetch);}).catch(error=>{if(active)Alert.alert('章节加载失败',error.message);});
     return()=>{active=false;cacheRef.current.cancel();};
-  },[ready,readingActive,bookId,book?.index,book?.chapters.length,book?.source?.dahuilang?.server,settings.prefetch]);
+  },[ready,readingActive,bookId,book?.index,book?.chapters.length,book?.source?.dahuilang?.server,book?.source?.dahuilang?.sessionVersion,settings.prefetch]);
   const run = async action => {
     if (busy) return;
     setBusy(true);
@@ -359,7 +359,7 @@ function ReaderApp() {
   const openBook = b => {
     setToolbarVisible(settings.readerStyle!=='极简');lastParagraph.current=0;
     updateBook(b.id, {
-      lastRead: Date.now()
+      lastRead: Date.now(),index:b.index,progress:b.progress||0
     });
     setBookId(b.id);
 
@@ -371,11 +371,11 @@ function ReaderApp() {
     updateBook(current.id,{index,progress:index < current.index ? .999 : 0,lastRead:Date.now()});
     setPanel(null);lastParagraph.current=0;
   };
-  const addOnline = (item, selectedSource = source, readNow = true) => run(async () => {
+  const addOnline = (item, selectedSource = source, readNow = true, startIndex, knownChapters) => run(async () => {
     if (!selectedSource) throw new Error('请先选择书源');
     const existing = data.books.find(b => b.originUrl === item.url && b.source?.bookSourceUrl === selectedSource.bookSourceUrl);
     if (existing) {
-      if (readNow) openBook(existing);else Alert.alert('已在书架', existing.title);
+      if (readNow) openBook(startIndex===undefined?existing:{...existing,index:Math.max(0,Math.min(existing.chapters.length-1,startIndex)),progress:0});else Alert.alert('已在书架', existing.title);
       return;
     }
     let info = item;
@@ -384,7 +384,7 @@ function ReaderApp() {
         info = await bookInfo(selectedSource, item);
       } catch {}
     }
-    const chapters = await catalog(selectedSource, info);
+    const chapters = knownChapters?.length?knownChapters.map(c=>({...c})):await catalog(selectedSource, info);
     const b = {
       ...metadataPatch(info),
       id: String(Date.now()),
@@ -393,10 +393,10 @@ function ReaderApp() {
       source: selectedSource,
       originUrl: item.url,
       chapters,
-      index: 0,
+      index: Math.max(0,Math.min(chapters.length-1,startIndex??0)),
       progress: 0
     };
-    if(readNow){let payload;try{payload=await chapterData(selectedSource,chapters[0]);}catch(error){if(!isDahuilang(selectedSource))throw error;payload={content:await chapterText(selectedSource,chapters[0]),communityReviews:[],communityLoaded:false,communityError:error.message};}Object.assign(b.chapters[0],payload);}
+    if(readNow){let payload;try{payload=await chapterData(selectedSource,chapters[b.index]);}catch(error){if(!isDahuilang(selectedSource))throw error;payload={content:await chapterText(selectedSource,chapters[b.index]),communityReviews:[],communityLoaded:false,communityError:error.message};}Object.assign(b.chapters[b.index],payload);}
     setData(d => ({
       ...d,
       books: [b, ...d.books]
@@ -423,11 +423,12 @@ function ReaderApp() {
       backgroundColor: '#E5F0EC'
     }]}><GlassSurface contentCard={settings.flipFollowAppearance} style={s.readerToolbar} prominent><Text style={s.heading}>作品详情</Text><Button onPress={() => setDetailTarget(null)}>完成</Button></GlassSurface><ScrollView contentContainerStyle={{
         padding: 20
-      }}>{detailTarget && <BookDetails book={detailTarget} source={detailTarget.source} busy={busy} onFetched={info => updateBook(detailTarget.id, metadataPatch(info))} onRead={info => {
+      }}>{detailTarget && <BookDetails book={detailTarget} source={detailTarget.source} busy={busy} onFetched={info => updateBook(detailTarget.id, metadataPatch(info))} onRead={(info,index) => {
           setDetailTarget(null);
           openBook({
             ...detailTarget,
-            ...info
+            ...info,
+            ...(index===undefined?{}:{index,progress:0})
           });
         }} />}</ScrollView></SafeAreaView></Modal>;
   if (!ready) return <SafeAreaView style={[s.root,{backgroundColor:'#FBF5E8',justifyContent:'center',alignItems:'center',gap:18}]}><Image source={brandLogos.B} resizeMode='contain' style={{width:170,height:170}}/><Text style={s.subtitle}>正在打开众阅…</Text></SafeAreaView>;

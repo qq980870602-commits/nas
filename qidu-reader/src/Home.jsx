@@ -187,7 +187,7 @@ export default function Home(p) {
                 deleteSource(source);
                 close();
               }}>移除此书源</Action></>}
-  {sheet === '作品详情' && onlineDetails && <BookDetails loadInfo={p.discoveryClient?.bookInfo} loadCatalog={p.discoveryClient?.catalog} book={onlineDetails.book} source={onlineDetails.source} busy={busy} onRead={info=>{close();addOnline(info,onlineDetails.source,true);}} onAdd={info=>{close();addOnline(info,onlineDetails.source,false);}}/>}
+  {sheet === '作品详情' && onlineDetails && <BookDetails loadInfo={p.discoveryClient?.bookInfo} loadCatalog={p.discoveryClient?.catalog} book={onlineDetails.book} source={onlineDetails.source} busy={busy} onRead={(info,index,chapters)=>{close();addOnline(info,onlineDetails.source,true,index,chapters);}} onAdd={info=>{close();addOnline(info,onlineDetails.source,false);}}/>}
   {sheet === '阅读设置' && appearance}
   {sheet==='备份与同步'&&p.cloudSync}
   {sheet==='朗读设置'&&(p.speechSettings||appearance)}

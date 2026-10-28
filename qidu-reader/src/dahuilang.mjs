@@ -8,14 +8,18 @@ export function isDahuilang(source) {
 }
 export function dahuilangServers(source) {
   const declaration = /\b(?:var|let|const)\s+host\s*=\s*\[([\s\S]*?)\]/.exec(source.jsLib || '');
-  return [...new Set([...(declaration?.[1] || '').matchAll(/['"](https:\/\/[^'"\s]+)['"]/g)].map(m=>{
+  const servers=[...new Set([...(declaration?.[1] || '').matchAll(/['"](https?:\/\/[^'"\s]+)['"]/g)].map(m=>{
     try {const u=new URL(m[1]);return !u.username&&!u.password&&u.pathname==='/'&&!u.search&&!u.hash?u.origin:null;}catch{return null;}
   }).filter(Boolean))];
+  // VIP2 is listed by the publisher but omitted from this source's host array.
+  if(servers.some(value=>new URL(value).hostname.endsWith('.langge.uk'))&&!servers.includes('https://v1.langge.uk'))servers.push('https://v1.langge.uk');
+  return servers;
 }
+export function dahuilangLineLabel(server){const u=new URL(server);if(u.hostname==='219.154.201.122')return 'VIP1 · 国内';const m=/^v(\d+)\.langge\.uk$/.exec(u.hostname);if(m)return 'VIP'+({1:2,2:3}[m[1]]||m[1]);return u.host;}
 export function dahuilangConfig(source) {
   if (!isDahuilang(source)) throw new Error('专用适配仅支持大灰狼聚合 5.9.30；其他版本需要重新核对规则');
   const servers=dahuilangServers(source),server=source.dahuilang?.server||servers[0];
-  if(!server||!servers.includes(server))throw new Error('请从这份书源声明的 HTTPS 线路中选择服务器');
+  if(!server||!servers.includes(server))throw new Error('请从这份书源与发布页提供的线路中选择服务器');
   return {server,platform:source.dahuilang?.platform?.trim()||'全部'};
 }
 function plainText(content) {

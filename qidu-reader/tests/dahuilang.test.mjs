@@ -18,10 +18,10 @@ test('段评正文使用会员会话，社区页面仅携带当前线路 Cookie'
   const anonymous=createDahuilangClient();
   await assert.rejects(()=>anonymous.communityPage(source,'https://one.example/fanqie_comment'),/登录/);
 });
-test('静态识别线路，不执行书源脚本，限制版本及 HTTPS',()=>{
-  assert.equal(isDahuilang(source),true);assert.deepEqual(dahuilangServers(source),['https://one.example','https://two.example']);assert.equal(globalThis.untrustedExecuted,undefined);
+test('静态识别线路，不执行书源脚本，限制版本与声明的地址',()=>{
+  assert.equal(isDahuilang(source),true);assert.deepEqual(dahuilangServers(source),['https://one.example','http://unsafe.example','https://two.example']);assert.equal(globalThis.untrustedExecuted,undefined);
   assert.equal(isDahuilang({...source,bookSourceName:'大灰狼聚合5.9.31(vip完全版)'}),false);
-  assert.throws(()=>dahuilangConfig({...source,dahuilang:{server:'https://other.example'}}),/HTTPS/);
+  assert.throws(()=>dahuilangConfig({...source,dahuilang:{server:'https://other.example'}}),/线路/);
 });
 test('付费适配登录→搜索→目录→正文，Cookie 不进入书籍数据',async()=>{
   const calls=[];let session=null;
@@ -85,3 +85,5 @@ test('旧书架从原始链接恢复大灰狼详情标识并保留阅读位置',
  const client=createDahuilangClient({fetcher:async(url,options)=>{assert.equal(new URL(url).pathname,'/detail');assert.equal(new URL(url).searchParams.get('book_id'),'12');assert.equal(options.method,'POST');return Response.json({code:0,data:{book_id:'12',book_name:'作品名',source:'番茄',author:'作者',abstract:'<p>作品介绍</p>',word_number:4882000,status:'连载中',last_chapter_update_time:'1小时前'}});}});
  const info=await client.bookInfo(source,{id:'saved',title:'作品名',originUrl:'dahuilang:'+encodeURIComponent(JSON.stringify(meta)),index:7,progress:.3});assert.equal(info.intro,'作品介绍');assert.equal(info.status,'连载中');assert.equal(info.wordCount,'4882000');assert.equal(info.updatedAt,'1小时前');assert.equal(info.index,7);assert.equal(info.progress,.3);
 });
+
+test('发布页线路编号保留VIP1与VIP3，不伪造VIP6，HTTP会话不跨线路',async()=>{const {dahuilangLineLabel}=await import('../src/dahuilang.mjs');const declared={...source,jsLib:"var host=['https://v5.langge.uk','http://219.154.201.122:5006','https://v2.langge.uk'];"};const servers=dahuilangServers(declared);assert.ok(servers.includes('http://219.154.201.122:5006'));assert.ok(servers.includes('https://v1.langge.uk'));assert.ok(!servers.some(x=>x.includes('v6.')));assert.equal(dahuilangLineLabel('http://219.154.201.122:5006'),'VIP1 · 国内');assert.equal(dahuilangLineLabel('https://v2.langge.uk'),'VIP3');const client=createDahuilangClient({sessionProvider:async()=>({server:'https://v5.langge.uk',token:'test',deviceId:'device'})});await assert.rejects(()=>client.chapterData({...declared,dahuilang:{server:'http://219.154.201.122:5006'}},{dahuilang:{item_id:'1',source:'番茄'}}),/登录/);});
