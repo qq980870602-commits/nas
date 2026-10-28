@@ -1,5 +1,6 @@
+import SafeAreaView from './SafeScreen.jsx';
 import React,{useState,useEffect,useRef} from 'react';
-import {View,Text,Modal,SafeAreaView} from 'react-native';
+import {View,Text,Modal} from 'react-native';
 import * as Font from 'expo-font';
 import {loadBundledTheme} from './bundled-theme.js';
 import ReaderView from './ReaderView.jsx';

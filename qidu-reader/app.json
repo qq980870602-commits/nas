@@ -2,20 +2,20 @@
   "expo": {
     "name": "众阅",
     "slug": "zhongyue-reader",
-    "version": "0.10.3",
+    "version": "0.10.4",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.qidu.reader",
-      "buildNumber": "13"
+      "buildNumber": "14"
     },
     "android": {
       "package": "com.qidu.reader",
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
       ],
-      "versionCode": 13,
+      "versionCode": 14,
       "adaptiveIcon": {
         "foregroundImage": "./assets/brand/zhongyue-B-1024.png",
         "backgroundColor": "#FBF5E8"

@@ -1,8 +1,9 @@
+import SafeAreaView from './src/SafeScreen.jsx';
 import {createChapterCache} from './src/chapter-cache.mjs';
 import {readingColors,cacheLimit} from './src/reading-policy.mjs';
 import {ThemeText as Text} from './src/Glass.jsx';
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, AppState, useColorScheme, Image, ImageBackground, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, AppState, useColorScheme, Image, ImageBackground, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import * as Picker from 'expo-document-picker';
 import * as FS from 'expo-file-system/legacy';
 import * as Font from 'expo-font';
