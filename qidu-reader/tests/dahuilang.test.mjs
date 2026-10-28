@@ -5,7 +5,7 @@ const source={bookSourceName:'🍅大灰狼聚合5.9.30(vip完全版)',bookSourc
 test('段评正文使用会员会话，社区页面仅携带当前线路 Cookie',async()=>{
   const client=createDahuilangClient({sessionProvider:async()=>({token:'session',deviceId:'device',server:'https://one.example'}),fetcher:async(url,options)=>{
     assert.equal(new URL(url).searchParams.get('review'),'1');
-    assert.equal(JSON.parse(options.body).god,true);
+    assert.equal(JSON.parse(options.body).god,true);assert.equal(JSON.parse(options.body).app,'阅读神评表情');
     assert.equal(options.headers.Cookie,'qttoken=session; deviceId=device');
     return Response.json({code:0,content:'<p>真实正文<comment ident="/fanqie_comment?paragraph_id=2" count="7"/></p>'});
   }});

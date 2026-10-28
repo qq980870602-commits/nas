@@ -1,3 +1,5 @@
+import {createChapterCache} from './src/chapter-cache.mjs';
+import {readingColors,cacheLimit} from './src/reading-policy.mjs';
 import {ThemeText as Text} from './src/Glass.jsx';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, AppState, useColorScheme, Image, ImageBackground, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
@@ -95,7 +97,7 @@ function ReaderApp() {
     saveAllowed = useRef(true);
   const book = data.books.find(b => b.id === bookId),
     settings = data.settings,
-    readerColors=settings.bindReaderTheme?{background:settings.appBackground,ink:settings.uiInk}:settings.followSystem?(systemScheme==='dark'?{background:settings.darkBackground,ink:settings.darkInk}:{background:settings.lightBackground,ink:settings.lightInk}):settings,
+    readerColors=readingColors(settings,systemScheme),
     chapter = book?.chapters[book.index];
   const source = data.sources.find(x => x.bookSourceUrl === sourceId);
   const updateSettings = value => setData(d => ({
@@ -112,6 +114,22 @@ function ReaderApp() {
       ...value
     } : b)
   }));
+  const dataRef=useRef(data);dataRef.current=data;
+  const [cacheStatus,setCacheStatus]=useState({loading:false,done:0,total:0});
+  const [readingActive,setReadingActive]=useState(AppState.currentState==='active');
+  const cacheRef=useRef(null);
+  if(!cacheRef.current)cacheRef.current=createChapterCache({
+    getBook:id=>dataRef.current.books.find(item=>item.id===id),
+    patchChapter:(id,index,payload)=>setData(value=>({...value,books:value.books.map(item=>item.id===id?{...item,chapters:item.chapters.map((c,i)=>i===index?{...c,...payload}:c)}:item)})),
+    fetchChapter:async (item,c)=>{try{return await chapterData(item.source,c);}catch(error){if(!isDahuilang(item.source))throw error;return {content:c.content||await chapterText(item.source,c),communityReviews:c.communityReviews||[],communityLoaded:false,communityError:error.message};}},
+    onStatus:setCacheStatus
+  });
+  useEffect(()=>{const listener=AppState.addEventListener('change',state=>setReadingActive(state==='active'));return()=>listener.remove();},[]);
+  useEffect(()=>{
+    const target=dataRef.current.books.find(item=>item.id===bookId);if(!ready||!readingActive||!target?.source)return;
+    let active=true;cacheRef.current.ensure(target.id,target.index).then(()=>{if(active)return cacheRef.current.prefetch(target.id,target.index,settings.prefetch);}).catch(error=>{if(active)Alert.alert('章节加载失败',error.message);});
+    return()=>{active=false;cacheRef.current.cancel();};
+  },[ready,readingActive,bookId,book?.index,book?.chapters.length,book?.source?.dahuilang?.server,settings.prefetch]);
   const run = async action => {
     if (busy) return;
     setBusy(true);
@@ -134,7 +152,7 @@ function ReaderApp() {
           setData({
             ...initial,
             ...parsed,
-            settings:mergeBundledTheme({...initial.settings,...parsed.settings,...cleanTheme(parsed.settings||{})},bundled)
+            settings:mergeBundledTheme({...initial.settings,...parsed.settings,...cleanTheme(parsed.settings||{}),readingPolicyVersion:parsed.settings?.readingPolicyVersion||0},bundled)
           });
         }else setData({...initial,settings:mergeBundledTheme(initial.settings,bundled)});
       } catch (e) {
@@ -273,41 +291,21 @@ function ReaderApp() {
     }]);
   };
   const restoreBackup=()=>run(async()=>{const result=await Picker.getDocumentAsync({type:'*/*',copyToCacheDirectory:true});if(result.canceled)return;applyBackup(JSON.parse(await FS.readAsStringAsync(result.assets[0].uri)));});
-  const prefetchBook = () => run(async () => {
-    const target = [...data.books].filter(b => b.source).sort((a, b) => (b.lastRead || 0) - (a.lastRead || 0))[0];
-    if (!target) throw new Error('请先添加一本网络书籍');
-    let fetched = 0;
-    try {
-      for (let i = target.index + 1; i < Math.min(target.chapters.length, target.index + 1 + (settings.prefetch || 0)); i++) {
-        if (target.chapters[i].content) continue;
-        const content = await chapterText(target.source, target.chapters[i]);
-        setData(d => ({
-          ...d,
-          books: d.books.map(b => b.id === target.id ? {
-            ...b,
-            chapters: b.chapters.map((c, j) => j === i ? {
-              ...c,
-              content
-            } : c)
-          } : b)
-        }));
-        fetched++;
-      }
-    } catch (e) {
-      throw new Error('已缓存 ' + fetched + ' 章，随后失败：' + e.message);
-    }
-    Alert.alert('缓存完成', target.title + '：新增 ' + fetched + ' 章');
-  });
-  const clearCache = () => setData(d => ({
+  const prefetchBook = async () => {
+    const target=[...dataRef.current.books].filter(b=>b.source).sort((a,b)=>(b.lastRead||0)-(a.lastRead||0))[0];
+    if(!target){Alert.alert('缓存','请先添加一本网络书籍');return;}
+    await cacheRef.current.prefetch(target.id,target.index,cacheLimit(settings.prefetch));
+  };
+  const clearCache = () => {cacheRef.current.invalidate();setData(d => ({
     ...d,
     books: d.books.map(b => b.source ? {
       ...b,
       chapters: b.chapters.map((c, i) => i === b.index ? c : {
         ...c,
-        content: undefined
+        content: undefined,communityReviews:undefined,communityLoaded:false,communityVersion:undefined
       })
     } : b)
-  }));
+  }));};
   const pick = async kind => {
     const result = await Picker.getDocumentAsync({
       type: '*/*',
@@ -364,28 +362,15 @@ function ReaderApp() {
       lastRead: Date.now()
     });
     setBookId(b.id);
-    if(b.source&&(!b.chapters[b.index].content||isDahuilang(b.source)&&!b.chapters[b.index].communityLoaded))run(()=>loadChapter(b,b.index,{preserveProgress:true}));
+
   };
-  const loadChapter = async (b,index,{preserveProgress=false}={}) => {
-    let payload;try{payload=await chapterData(b.source,b.chapters[index]);}catch(error){if(!isDahuilang(b.source))throw error;payload={content:b.chapters[index].content||await chapterText(b.source,b.chapters[index]),communityReviews:[],communityLoaded:false,communityError:error.message};}
-    const chapters = b.chapters.map((c, i) => i === index ? {
-      ...c,
-      ...payload
-    } : c);
-    updateBook(b.id, {
-      chapters,
-      index,
-      progress:preserveProgress?(b.progress||0):0
-    });
+  const loadChapter = async (b,index) => cacheRef.current.ensure(b.id,index,{force:true});
+  const goChapter = index => {
+    const current=dataRef.current.books.find(item=>item.id===bookId);
+    if(!current||index<0||index>=current.chapters.length)return;
+    updateBook(current.id,{index,progress:index < current.index ? .999 : 0,lastRead:Date.now()});
+    setPanel(null);lastParagraph.current=0;
   };
-  const goChapter = index => run(async () => {
-    if (index < 0 || index >= book.chapters.length) return;
-    if (book.source && (!book.chapters[index].content||isDahuilang(book.source)&&!book.chapters[index].communityLoaded)) await loadChapter(book, index);else updateBook(book.id, {
-      index,
-      progress: 0
-    });
-    setPanel(null);
-  });
   const addOnline = (item, selectedSource = source, readNow = true) => run(async () => {
     if (!selectedSource) throw new Error('请先选择书源');
     const existing = data.books.find(b => b.originUrl === item.url && b.source?.bookSourceUrl === selectedSource.bookSourceUrl);
@@ -449,7 +434,7 @@ function ReaderApp() {
   if(startupVisible)return <TouchableOpacity activeOpacity={1} style={{flex:1,backgroundColor:settings.startupBuiltinLogo?'#FBF5E8':settings.appBackground,justifyContent:'center',alignItems:'center'}} onPress={()=>setStartupVisible(false)}><Image source={{uri:settings.startupImage}} style={{width:settings.startupBuiltinLogo?'72%':'100%',height:settings.startupBuiltinLogo?'72%':'100%'}} resizeMode={settings.startupBuiltinLogo?'contain':'cover'}/></TouchableOpacity>;
   if (book) return <AppearanceProvider settings={{...settings,uiFontFamily:fontReady||uiFontReady}}><SafeAreaView style={[s.root, {
       backgroundColor: readerColors.background
-    }]}><StatusBar hidden={settings.showStatusBar===false} style={systemScheme==='dark'&&settings.followSystem||['#202623','#1D2237','#1C3027'].includes(readerColors.background)?'light':'dark'} />{toolbarVisible&&<GlassSurface style={s.readerToolbar} prominent><Button onPress={() => setBookId(null)}>‹ 书架</Button><Button onPress={()=>{setAnnotationIndex(lastParagraph.current||0);setPanel('段落批注');}}>批注</Button><Button onPress={() => setPanel('目录')}>目录</Button><Button onPress={toggleSpeech}>{speaking ? '停止' : '朗读'}</Button><Button onPress={() => setPanel('排版')}>设置</Button></GlassSurface>}<ReaderView key={book.id+':'+book.index} ref={reader} book={book} chapter={chapter} settings={{...settings,...readerColors,speechHighlight:systemScheme==='dark'?settings.speechHighlightDark:settings.speechHighlightLight}} controlsActive={!panel&&!detailTarget} volumeActive={!speaking} onProgress={progress=>{const n=Date.now();if(n-lastSave.current>400){lastSave.current=n;updateBook(book.id,{progress});}}} onParagraph={index=>{lastParagraph.current=index;}} onBubble={index=>{setAnnotationIndex(index);setPanel('段落批注');}} onChapter={direction=>goChapter(book.index+direction)} onExit={()=>setBookId(null)} onMenu={()=>setToolbarVisible(v=>!v)}/>{toolbarVisible&&<GlassSurface style={s.readerToolbar} prominent><Button disabled={busy} onPress={() => reader.current?.turn(-1)}>上一页</Button><Button onPress={toggleBookmark}>{(book.bookmarks || []).includes(book.index) ? '已加书签' : '＋ 书签'}</Button><Button disabled={busy} onPress={() => reader.current?.turn(1)}>下一页</Button></GlassSurface>}{!toolbarVisible&&<TouchableOpacity accessibilityLabel='打开阅读菜单和设置' onPress={()=>setToolbarVisible(true)} style={{position:'absolute',top:16,right:8,zIndex:30,padding:10,opacity:.6}}><Text style={{color:readerColors.ink,fontSize:18}}>⋯</Text></TouchableOpacity>}{speaking&&settings.speechView==='专注'&&<GlassSurface style={{position:'absolute',bottom:90,left:20,right:20,padding:20}}><Text style={{fontSize:22,color:settings.ink}}>{readerParagraphs(chapter.content,settings).find(p=>p.index===speechParagraph)?.text}</Text><Button onPress={toggleSpeech}>停止朗读</Button></GlassSurface>}<Modal visible={!!panel} animationType="slide" onRequestClose={() => setPanel(null)}><SafeAreaView style={s.root}><GlassSurface style={s.readerToolbar} prominent><Text style={s.heading}>{panel}</Text><Button onPress={() => setPanel(null)}>完成</Button></GlassSurface>{panel==='段落批注'?<ParagraphNotes book={book} chapter={chapter} index={annotationIndex} busy={busy} onUpdate={paragraphNotes=>updateBook(book.id,{paragraphNotes})} onRefresh={()=>run(()=>loadChapter(book,book.index,{preserveProgress:true}))}/>:<ScrollView>{panel === '排版' ? settingView : book.chapters.map((c, i) => <TouchableOpacity disabled={busy} key={i} style={s.catalog} onPress={() => goChapter(i)}><Text style={{
+    }]}><StatusBar hidden={settings.showStatusBar===false} style={systemScheme==='dark'&&settings.followSystem||['#202623','#1D2237','#1C3027'].includes(readerColors.background)?'light':'dark'} />{toolbarVisible&&<GlassSurface style={s.readerToolbar} prominent><Button onPress={() => setBookId(null)}>‹ 书架</Button><Button onPress={()=>{setAnnotationIndex(lastParagraph.current||0);setPanel('段落批注');}}>批注</Button><Button onPress={() => setPanel('目录')}>目录</Button><Button onPress={toggleSpeech}>{speaking ? '停止' : '朗读'}</Button><Button onPress={() => setPanel('排版')}>设置</Button></GlassSurface>}<ReaderView key={book.id} ref={reader} book={book} chapter={chapter} settings={{...settings,...readerColors,speechHighlight:systemScheme==='dark'?settings.speechHighlightDark:settings.speechHighlightLight}} controlsActive={!panel&&!detailTarget} volumeActive={!speaking} onProgress={progress=>{const n=Date.now();if(n-lastSave.current>400){lastSave.current=n;updateBook(book.id,{progress});}}} onParagraph={index=>{lastParagraph.current=index;}} onBubble={index=>{setAnnotationIndex(index);setPanel('段落批注');}} onChapter={direction=>goChapter(book.index+direction)} onExit={()=>setBookId(null)} onMenu={()=>setToolbarVisible(v=>!v)}/>{toolbarVisible&&<GlassSurface style={s.readerToolbar} prominent><Button disabled={busy} onPress={() => reader.current?.turn(-1)}>上一页</Button><Button onPress={toggleBookmark}>{(book.bookmarks || []).includes(book.index) ? '已加书签' : '＋ 书签'}</Button><Button disabled={busy} onPress={() => reader.current?.turn(1)}>下一页</Button></GlassSurface>}{!toolbarVisible&&<TouchableOpacity accessibilityLabel='打开阅读菜单和设置' onPress={()=>setToolbarVisible(true)} style={{position:'absolute',top:16,right:8,zIndex:30,padding:10,opacity:.6}}><Text style={{color:readerColors.ink,fontSize:18}}>⋯</Text></TouchableOpacity>}{speaking&&settings.speechView==='专注'&&<GlassSurface style={{position:'absolute',bottom:90,left:20,right:20,padding:20}}><Text style={{fontSize:22,color:settings.ink}}>{readerParagraphs(chapter.content,settings).find(p=>p.index===speechParagraph)?.text}</Text><Button onPress={toggleSpeech}>停止朗读</Button></GlassSurface>}<Modal visible={!!panel} animationType="slide" onRequestClose={() => setPanel(null)}><SafeAreaView style={s.root}><GlassSurface style={s.readerToolbar} prominent><Text style={s.heading}>{panel}</Text><Button onPress={() => setPanel(null)}>完成</Button></GlassSurface>{panel==='段落批注'?<ParagraphNotes book={book} chapter={chapter} index={annotationIndex} busy={busy} onUpdate={paragraphNotes=>updateBook(book.id,{paragraphNotes})} onRefresh={()=>run(()=>loadChapter(book,book.index,{preserveProgress:true}))}/>:<ScrollView>{panel === '排版' ? settingView : book.chapters.map((c, i) => <TouchableOpacity disabled={busy} key={i} style={s.catalog} onPress={() => goChapter(i)}><Text style={{
                 color: i === book.index ? '#426B56' : '#333'
               }}>{c.title}</Text></TouchableOpacity>)}</ScrollView>}</SafeAreaView></Modal></SafeAreaView>{detailSheet}</AppearanceProvider>;
   return <AppearanceProvider settings={{...settings,uiFontFamily:fontReady||uiFontReady}}><Home cloudSync={<CloudSync data={data} onRestore={applyBackup}/>} speechSettings={speechSettings} fontPanel={fontPanel} fontReady={fontReady} onExportTheme={exportTheme} onImportTheme={importTheme} pickImage={kind=>run(()=>pick(kind))} data={data} tab={tab} setTab={setTab} busy={busy} onBookDetails={setDetailTarget} openBook={openBook} removeBook={b => Alert.alert('移除书籍', b.title, [{
@@ -488,14 +473,14 @@ function ReaderApp() {
       } : b)
     }))} />} onSpeakRate={rate => updateSettings({
       speechRate: rate
-    })} onPrefetch={prefetchBook} onClearCache={clearCache} onBackup={exportBackup} onRestore={restoreBackup} onBookmark={(b, index) => {
+    })} cacheStatus={cacheStatus} onPrefetch={prefetchBook} onClearCache={clearCache} onBackup={exportBackup} onRestore={restoreBackup} onBookmark={(b, index) => {
       updateBook(b.id, {
         index,
         progress: 0,
         lastRead: Date.now()
       });
       setBookId(b.id);
-      if (b.source && !b.chapters[index].content) run(() => loadChapter(b, index));
+
     }} />{detailSheet}</AppearanceProvider>;
 }
 const s = StyleSheet.create({
