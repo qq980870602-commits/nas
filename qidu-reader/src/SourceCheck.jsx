@@ -1,9 +1,10 @@
+import {validateSource} from './source-check.mjs';
 import React,{useRef,useState,useEffect} from 'react';
 import {View,Text,Pressable,Switch} from 'react-native';
 import {search} from './source.mjs';
 export default function SourceCheck({sources,settings,onSettings,onApply}){
  const [status,setStatus]=useState(''),[running,setRunning]=useState(false);const active=useRef(false),seen=useRef(new Set(sources.map(s=>s.bookSourceUrl)));
- const check=async(items)=>{if(active.current||!items.length)return;active.current=true;setRunning(true);const invalid=[],results={};let done=0;for(const source of items){if(!active.current)break;let result='';for(let attempt=0;attempt<2;attempt++){try{const books=await search(source,'斗罗大陆');result=books.length?'可用':'待确认：搜索无结果';break;}catch(e){const message=String(e.message||e);result=/HTTP\s*(404|410)\b/.test(message)?'失效：搜索接口已移除':'待确认：'+message;if(!result.startsWith('失效'))break;}}results[source.bookSourceUrl]={message:result,checkedAt:Date.now()};if(result.startsWith('失效'))invalid.push(source.bookSourceUrl);setStatus('已校验 '+(++done)+'/'+items.length+' · '+source.bookSourceName+'：'+result);}onApply(invalid,results);setStatus('完成 '+done+' 个，移除 '+invalid.length+' 个确认失效书源；其他结果显示在书源卡片中');active.current=false;setRunning(false);};
+ const check=async(items)=>{if(active.current||!items.length)return;active.current=true;setRunning(true);const invalid=[],results={};let done=0;for(const source of items){if(!active.current)break;const result=await validateSource(source,search);results[source.bookSourceUrl]={message:result,checkedAt:Date.now()};if(result.startsWith('失效'))invalid.push(source.bookSourceUrl);setStatus('已校验 '+(++done)+'/'+items.length+' · '+source.bookSourceName+'：'+result);}onApply(invalid,results);setStatus('完成 '+done+' 个，移除 '+invalid.length+' 个确认失效书源；其他结果显示在书源卡片中');active.current=false;setRunning(false);};
  useEffect(()=>{const fresh=sources.filter(s=>!seen.current.has(s.bookSourceUrl));seen.current=new Set(sources.map(s=>s.bookSourceUrl));if(settings.autoCheckSources&&fresh.length)check(fresh);},[sources]);
  useEffect(()=>()=>{active.current=false;},[]);
  const button=(label,fn)=><Pressable onPress={fn} style={{padding:12,borderRadius:20,backgroundColor:'#FFFFFF88'}}><Text style={{color:'#376F60'}}>{label}</Text></Pressable>;
