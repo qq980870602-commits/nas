@@ -1,3 +1,4 @@
+import {rankRoutes,routeFailure} from './route-health.mjs';
 import {parseReviewContent,reviewAddress} from './paragraphs.mjs';
 import {parseDocument} from 'htmlparser2';
 import {textContent} from 'domutils';
@@ -142,4 +143,20 @@ export function createDahuilangClient({fetcher=(...args)=>fetch(...args),session
 }
 let sessionProvider=async()=>null;
 export function configureDahuilangSessionProvider(provider) {sessionProvider=provider;}
-export const dahuilangClient=createDahuilangClient({sessionProvider:source=>sessionProvider(source)});
+const rawClient=createDahuilangClient({sessionProvider:source=>sessionProvider(source)});
+let routeListener=()=>{};export function configureDahuilangRouteListener(fn){routeListener=fn;}
+const rankings=new Map(),inflight=new Map();
+export async function measureDahuilangRoutes(source){
+ const id=source.bookSourceUrl;if(inflight.has(id))return inflight.get(id);
+ const task=rankRoutes(dahuilangServers(source).filter(server=>server.startsWith('https:')||server===source.dahuilang?.server),{probe:async server=>{const result=await createDahuilangClient({timeout:4500}).discoveryCategories({...source,dahuilang:{...source.dahuilang,server}},{platform:'番茄'});if(!result.length)throw Error('未返回有效分类');}}).then(rows=>{rankings.set(id,{rows,at:Date.now()});return rows;}).finally(()=>inflight.delete(id));inflight.set(id,task);return task;
+}
+export const dahuilangClient=new Proxy(rawClient,{get(target,key){const method=target[key];if(typeof method!=='function'||key==='login'||key==='communityPage')return method;return async(source,...args)=>{
+ if(source.dahuilang?.autoRoute===false)return method(source,...args);
+ const privateRequest=key==='chapterData'||key==='chapterText';
+ const cache=rankings.get(source.bookSourceUrl);const rows=cache&&Date.now()-cache.at<300000?cache.rows:await measureDahuilangRoutes(source);
+ let candidates=rows.filter(r=>r.available).map(r=>r.server);const current=dahuilangConfig(source).server;
+ if(privateRequest){const allowed=[];for(const server of candidates){const session=await sessionProvider({...source,dahuilang:{...source.dahuilang,server}});if(session?.server===server&&session.token)allowed.push(server);}candidates=allowed;}
+ if(!candidates.length)candidates=[current];let last;
+ for(const server of candidates){const selected={...source,dahuilang:{...source.dahuilang,server}};try{const callArgs=[...args];if(key==='discover'&&callArgs[0]?.url){const u=new URL(callArgs[0].url,current);if(dahuilangServers(source).includes(u.origin))callArgs[0]={...callArgs[0],url:u.pathname+u.search};}const value=await method(selected,...callArgs);if(server!==current)routeListener(source.bookSourceUrl,selected.dahuilang);return value;}catch(e){last=e;if(!routeFailure(e))throw e;const row=rows.find(r=>r.server===server);if(row)row.available=false;}}
+ throw Error((last?.message||'没有可用线路')+(privateRequest?'；其他线路需要先登录一次，才可自动切换正文。':''));
+ };}});
