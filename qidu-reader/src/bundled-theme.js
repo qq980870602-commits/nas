@@ -1,6 +1,6 @@
 import {migrateReadingPolicy} from './reading-policy.mjs';
 import {Asset} from 'expo-asset';import * as FS from 'expo-file-system/legacy';import {Platform} from 'react-native';
-export const brandLogos={A:require('../assets/brand/zhongyue-A-1024.png'),B:require('../assets/brand/zhongyue-B-1024.png'),C:require('../assets/brand/zhongyue-C-1024.png')};
+export const brandLogos={A:require('../assets/brand/zhongyue-A-1024.png'),B:require('../assets/brand/zhongyue-slogan-1024.png'),C:require('../assets/brand/zhongyue-C-1024.png')};
 export const bundledBackground=require('../assets/theme/bg_default_light.jpg');
 export const bundledCovers=[require('../assets/theme/cover_0.png'),require('../assets/theme/cover_1.png'),require('../assets/theme/cover_2.png'),require('../assets/theme/cover_3.png'),require('../assets/theme/cover_4.png'),require('../assets/theme/cover_5.png')];
 export const bundledTabs={'书架':{normal:require('../assets/theme/tab_bookshelf.png'),selected:require('../assets/theme/sel_bookshelf.png')},'发现':{normal:require('../assets/theme/tab_explore.png'),selected:require('../assets/theme/sel_explore.png')},'书源':{normal:require('../assets/theme/tab_search.png'),selected:require('../assets/theme/sel_search.png')},'统计':{normal:require('../assets/theme/tab_stats.png'),selected:require('../assets/theme/sel_stats.png')},'设置':{normal:require('../assets/theme/tab_settings.png'),selected:require('../assets/theme/sel_settings.png')}};
